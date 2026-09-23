@@ -18,7 +18,10 @@ create table public.videos(
   status text not null default 'uploading' check(status in ('uploading','processing','ready','failed')),
   filename text, mime_type text, size bigint, duration real, width int, height int,
   original_path text not null, playback_path text, thumbnail_path text,
-  created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  check(original_path like owner_id::text||'/'||id::text||'/%'),
+  check(playback_path is null or playback_path like owner_id::text||'/'||id::text||'/%'),
+  check(thumbnail_path is null or thumbnail_path like owner_id::text||'/'||id::text||'/%'));
 create table public.comments(
   id uuid primary key default gen_random_uuid(),
   video_id uuid not null references public.videos(id) on delete cascade,
@@ -33,6 +36,7 @@ alter table public.videos enable row level security;
 alter table public.comments enable row level security;
 create policy "profiles readable" on public.profiles for select using (true);
 create policy "profile update own" on public.profiles for update using (id=auth.uid());
+create policy "profile insert own" on public.profiles for insert with check (id=auth.uid());
 create policy "videos read" on public.videos for select using ((visibility='public' and status='ready') or owner_id=auth.uid());
 create policy "videos insert own" on public.videos for insert with check (owner_id=auth.uid());
 create policy "videos update own" on public.videos for update using (owner_id=auth.uid()) with check (owner_id=auth.uid());
@@ -47,6 +51,7 @@ create policy "files insert own" on storage.objects for insert to authenticated 
 create policy "files update own" on storage.objects for update to authenticated using (bucket_id='vyde' and (storage.foldername(name))[1]=auth.uid()::text);
 create policy "files delete own" on storage.objects for delete to authenticated using (bucket_id='vyde' and (storage.foldername(name))[1]=auth.uid()::text);
 
+The CHECK constraints force every stored path into the owner's own folder, so nobody can point a public video at another user's file.
 File layout in Storage: <userId>/<videoId>/original.<ext>, playback.webm, thumb.jpg. Originals stay private to the owner
 whenever a playback version exists; public viewers only receive playback + thumbnail via short-lived signed URLs.
 -->
@@ -121,6 +126,8 @@ const CATS=["Entertainment","Education","Music","Travel","Food","Sports","Gaming
 let ME=null,AUTHMODE="in";
 const canManage=v=>ME&&v.owner_id===ME.id;
 
+async function ensureProfile(){if(!ME)return;try{await sb.from("profiles").upsert({id:ME.id,username:(ME.user_metadata&&ME.user_metadata.username)||(ME.email||"user").split("@")[0]},{onConflict:"id",ignoreDuplicates:true})}catch{}}
+
 /* ---------- Data access (all through Supabase; RLS enforces ownership server-side) ---------- */
 const SEL="*, profiles(username)";
 async function sign(paths,ttl=3600){paths=[...new Set(paths.filter(Boolean))];if(!paths.length)return{};
@@ -132,11 +139,13 @@ async function listPublic(q){
   const{data,error}=await r;if(error)throw error;return data}
 async function destroy(id){ // permanently removes ALL stored files, verifies they are gone, then removes the database row
   const dir=`${ME.id}/${id}`,st=sb.storage.from(BUCKET);
+  await sb.from("videos").update({status:"failed"}).eq("id",id); // hide from public viewers before the files disappear
   const{data:fl,error:e1}=await st.list(dir);if(e1)throw e1;
   if(fl.length){const{error}=await st.remove(fl.map(x=>`${dir}/${x.name}`));if(error)throw error}
   const{data:left,error:e2}=await st.list(dir);if(e2)throw e2;
   if(left.length)throw new Error("Some stored files could not be removed. Try again.");
-  const{error}=await sb.from("videos").delete().eq("id",id);if(error)throw error}
+  const{data:gone,error}=await sb.from("videos").delete().eq("id",id).select("id");if(error)throw error;
+  if(!gone.length){const{data:c}=await sb.from("videos").select("id").eq("id",id).maybeSingle();if(c)throw new Error("The database record was not deleted (not permitted).")}}
 async function put(path,blob,onp){ // real byte-level progress via XHR to the Storage REST endpoint, authenticated with the user's JWT
   const{data:{session}}=await sb.auth.getSession();if(!session)throw new Error("You are signed out. Sign in and retry.");
   return new Promise((ok,no)=>{const x=new XMLHttpRequest();
@@ -177,7 +186,9 @@ function transcode(file,info,onp){return new Promise((ok,no)=>{
   const url=URL.createObjectURL(file),v=document.createElement("video"),k=Math.min(1,720/info.height),c=document.createElement("canvas"),g=c.getContext("2d"),chunks=[];
   c.width=Math.round(info.width*k/2)*2;c.height=Math.round(info.height*k/2)*2;v.src=url;v.playsInline=true;
   let ac,rec,raf,dead=false;
-  const end=(f,x)=>{if(dead)return;dead=true;cancelAnimationFrame(raf);try{rec&&rec.state!=="inactive"&&rec.stop()}catch{}v.pause();v.removeAttribute("src");v.load();URL.revokeObjectURL(url);ac&&ac.close().catch(()=>{});f(x)};
+  const vis=()=>{if(dead||!rec)return;if(document.hidden){v.pause();if(rec.state==="recording")rec.pause()}else{if(rec.state==="paused")rec.resume();v.play().catch(()=>{})}};
+  document.addEventListener("visibilitychange",vis);
+  const end=(f,x)=>{if(dead)return;dead=true;document.removeEventListener("visibilitychange",vis);cancelAnimationFrame(raf);try{rec&&rec.state!=="inactive"&&rec.stop()}catch{}v.pause();v.removeAttribute("src");v.load();URL.revokeObjectURL(url);ac&&ac.close().catch(()=>{});f(x)};
   U.abortT=()=>end(no,new Error("skipped"));
   v.onerror=()=>end(no,new Error("The browser could not decode this video for compression."));
   v.onended=()=>{rec.onstop=()=>end(ok,new Blob(chunks,{type:mime.split(";")[0]}));rec.stop()};
@@ -219,9 +230,9 @@ function uploadH(){
   const th=U.thumbURL?`<div class="th" style="max-width:360px"><img src="${U.thumbURL}" alt="Frame from your video"></div>`:`<p class="mut">No preview frame could be extracted.</p>`;
   if(U.s==="ANALYZED"){const cc=canCompress()&&U.duration>0;
     return st+th+`<dl><dt>Filename</dt><dd>${esc(f.name)}</dd><dt>Size</dt><dd>${fmtB(f.size)}</dd><dt>Type</dt><dd>${esc(f.type||"not reported")}</dd><dt>Duration</dt><dd>${U.duration?fmtD(U.duration):"not reported"}</dd><dt>Dimensions</dt><dd>${U.width}×${U.height}</dd></dl>`+formH(U.form||{title:U.title,tags:[],visibility:"public",category:CATS[0],allow_comments:true,description:""})+
-    `<label class="chk"><input type="checkbox" id="f-cmp" ${cc?"":"disabled"} ${cc&&(U.height>720||f.size>40e6)?"checked":""}> Also create a compressed 720p web version (takes about as long as the video plays; keep this tab visible)</label>${cc?"":`<p class="mut">Browser-side compression is unavailable. The original will be used for playback.</p>`}<button class="btn" data-act="save">Upload video</button><button class="btn ghost" data-act="cancel">Choose a different file</button>`}
+    `<label class="chk"><input type="checkbox" id="f-cmp" ${cc?"":"disabled"} ${cc&&(U.height>720||f.size>40e6)?"checked":""}> Also create a compressed 720p web version (takes about as long as the video plays; it pauses while this tab is hidden)</label>${cc?"":`<p class="mut">Browser-side compression is unavailable. The original will be used for playback.</p>`}<button class="btn" data-act="save">Upload video</button><button class="btn ghost" data-act="cancel">Choose a different file</button>`}
   if(U.s==="UPLOADING"){const p=U.prog,pc=p?Math.round(p.l/p.t*100):0;return st+`<p><span class="spin"></span>${esc(U.stage||"Preparing upload")}${p?`: ${fmtB(p.l)} of ${fmtB(p.t)} (${pc}%)`:""}</p><progress max="100" value="${pc}"></progress><button class="btn ghost" data-act="abort">Cancel upload</button>`}
-  if(U.s==="PROCESSING")return st+`<p><span class="spin"></span>Creating compressed web version… keep this tab visible.</p><progress id="tp" max="1" value="${U.tp||0}"></progress><p class="mut">Your original file is already uploaded.</p><button class="btn ghost" data-act="skip">Skip compression</button>`;
+  if(U.s==="PROCESSING")return st+`<p><span class="spin"></span>Creating compressed web version… it pauses while this tab is hidden.</p><progress id="tp" max="1" value="${U.tp||0}"></progress><p class="mut">Your original file is already uploaded.</p><button class="btn ghost" data-act="skip">Skip compression</button>`;
   if(U.s==="FAILED")return st+err+`<p class="mut">Nothing is marked as published until every step succeeds.</p><button class="btn" data-act="retry">Retry</button><button class="btn danger" data-act="discard">Discard and remove partial upload</button>`;
   const pub=U.rec.visibility==="public";
   return st+`<div class="msg ok">${pub?"Uploaded to VYDE. It is now available to everyone.":"Uploaded to VYDE as private. Only you can see it."}</div>${U.note?`<p class="mut">${esc(U.note)}</p>`:""}${th}${actions(U.rec)}<button class="btn ghost" data-act="again">Upload another</button>`}
@@ -235,16 +246,28 @@ async function run(){
   const f=U.file,d=U.d||(U.d={id:crypto.randomUUID()}),base=`${ME.id}/${d.id}/`,ext=(f.name.match(/\.[^.]+$/)||[".mp4"])[0].toLowerCase(),op=base+"original"+ext;
   try{
     U.s="UPLOADING";U.err=null;U.prog=null;U.stage="Creating record";ru();
-    if(!d.row){const{error}=await sb.from("videos").insert({id:d.id,...U.form,filename:f.name,mime_type:f.type||null,size:f.size,duration:U.duration,width:U.width,height:U.height,original_path:op,status:"uploading"});if(error)throw error;d.row=1}
+    if(!d.row){const{error}=await sb.from("videos").insert({id:d.id,...U.form,filename:f.name,mime_type:f.type||null,size:f.size,duration:U.duration,width:U.width,height:U.height,original_path:op,status:"uploading"});if(error)throw error;d.row=1}else await sb.from("videos").update({status:"uploading"}).eq("id",d.id);
     if(U.thumb&&!d.thumb){U.stage="Uploading thumbnail";ru();await put(base+"thumb.jpg",U.thumb);d.thumb=1}
     if(!d.orig){U.stage="Uploading original";ru();await put(op,f,(l,t)=>{U.prog={l,t};ru()});d.orig=1}
     if(U.compress&&!U.skip&&!d.pblob){U.s="PROCESSING";U.tp=0;ru();await sb.from("videos").update({status:"processing"}).eq("id",d.id);
       try{d.pblob=await transcode(f,U,x=>{U.tp=x;const p=$("#tp");if(p)p.value=x})}
       catch(e){U.skip=true;if(e.message!=="skipped")U.note="Compression failed ("+e.message+"). The original is used for playback."}}
     if(d.pblob&&!d.pp){U.s="UPLOADING";U.stage="Uploading web playback version";U.prog=null;ru();const pp=base+"playback."+(d.pblob.type.includes("mp4")?"mp4":"webm");await put(pp,d.pblob,(l,t)=>{U.prog={l,t};ru()});d.pp=pp}
+    U.stage="Verifying stored files";U.prog=null;ru();
+    const{data:fl,error:le}=await sb.storage.from(BUCKET).list(`${ME.id}/${d.id}`);if(le)throw le;
+    const have=new Set(fl.map(x=>x.name));
+    if(!have.has("original"+ext)||(d.thumb&&!have.has("thumb.jpg"))||(d.pp&&!have.has(d.pp.split("/").pop())))throw new Error("Storage verification failed: an uploaded file was not found. Retry the upload.");
     const{data,error}=await sb.from("videos").update({status:"ready",playback_path:d.pp||null,thumbnail_path:d.thumb?base+"thumb.jpg":null,updated_at:new Date().toISOString()}).eq("id",d.id).select().single();
     if(error)throw error;U.rec=data;U.s="READY";ru()
-  }catch(e){U.s="FAILED";U.err=errMsg(e);ru()}}
+  }catch(e){U.s="FAILED";U.err=errMsg(e);ru();if(d.row)sb.from("videos").update({status:"failed"}).eq("id",d.id).then(()=>{},()=>{})}}
+
+/* ---------- Comments (refreshed in place so the video keeps playing) ---------- */
+let CUR=null;
+async function commentsH(v){
+  if(!v.allow_comments)return`<p class="mut">Comments are turned off.</p>`;
+  const{data:C,error}=await sb.from("comments").select("*, profiles(username)").eq("video_id",v.id).order("created_at",{ascending:false});if(error)throw error;
+  return`<h2>Comments (${C.length})</h2>${ME?`<form class="sf" data-act="comment" data-id="${v.id}"><input id="cb" maxlength="1000" placeholder="Add a comment" required><button class="btn" style="margin:0">Post</button></form>`:`<p class="mut"><a href="#/auth" style="color:var(--acc)">Sign in</a> to comment.</p>`}${C.map(c=>`<div class="cm"><b>${esc(c.profiles?.username||"Unknown")}</b> <span class="mut">${new Date(c.created_at).toLocaleString()}</span><p>${esc(c.body)}</p>${ME&&(c.user_id===ME.id||canManage(v))?`<button class="btn ghost" style="padding:4px 12px;margin:0" data-act="delc" data-id="${c.id}">Delete</button>`:""}</div>`).join("")}`}
+const refreshC=async()=>{const el=$("#cmts");if(el&&CUR)el.innerHTML=await commentsH(CUR)};
 
 /* ---------- Views ---------- */
 const VIEWS={
@@ -260,13 +283,10 @@ const VIEWS={
   async watch(id){
     const{data:v,error}=await sb.from("videos").select(SEL).eq("id",id).maybeSingle();if(error)throw error;if(!v)return notFound();
     let body;
-    if(v.status!=="ready")body=`<div class="unavail"><div><h3>Video file is unavailable.</h3><p>This upload is ${esc(v.status)}.</p></div></div>`;
-    else{const key=v.playback_path||v.original_path,m=await sign([key,v.thumbnail_path]);
+    if(v.status!=="ready")body=`<div class="unavail"><div><h3>Video file is unavailable.</h3><p>This upload is not finished (${esc(v.status)}).</p></div></div>`;
+    else{const key=v.playback_path||v.original_path,m=await sign([key,v.thumbnail_path],21600);
       body=m[key]?`<div class="player"><video controls playsinline preload="metadata" src="${m[key]}" ${m[v.thumbnail_path]?`poster="${m[v.thumbnail_path]}"`:""} onloadedmetadata="if(this.duration===Infinity){this.currentTime=1e101;this.ontimeupdate=()=>{this.ontimeupdate=null;this.currentTime=0}}" onerror="vidErr(this)"></video></div>`:`<div class="unavail"><div><h3>Video file is unavailable.</h3><p>The file could not be loaded from storage.</p></div></div>`}
-    let cm="";
-    if(v.allow_comments){const{data:C,error:ce}=await sb.from("comments").select("*, profiles(username)").eq("video_id",id).order("created_at",{ascending:false});if(ce)throw ce;
-      cm=`<h2>Comments (${C.length})</h2>${ME?`<form class="sf" data-act="comment" data-id="${id}"><input id="cb" maxlength="1000" placeholder="Add a comment" required><button class="btn" style="margin:0">Post</button></form>`:`<p class="mut"><a href="#/auth" style="color:var(--acc)">Sign in</a> to comment.</p>`}${C.map(c=>`<div class="cm"><b>${esc(c.profiles?.username||"Unknown")}</b> <span class="mut">${new Date(c.created_at).toLocaleString()}</span><p>${esc(c.body)}</p>${ME&&(c.user_id===ME.id||canManage(v))?`<button class="btn ghost" style="padding:4px 12px;margin:0" data-act="delc" data-id="${c.id}">Delete</button>`:""}</div>`).join("")}`}
-    else cm=`<p class="mut">Comments are turned off.</p>`;
+    CUR=v;const cm=`<section id="cmts">${await commentsH(v)}</section>`;
     return`${body}<h1 style="margin-top:18px">${esc(v.title)}</h1><p><a class="badge" href="#/profile/${v.owner_id}">${esc(v.profiles?.username||"Unknown")}</a> <span class="badge">${esc(v.category||"")}</span> ${v.visibility==="private"?`<span class="badge bad">Private</span>`:""}</p><p>${esc(v.description)}</p>${(v.tags||[]).length?`<p class="mut">Tags: ${esc(v.tags.join(", "))}</p>`:""}
     <dl><dt>Duration</dt><dd>${fmtD(v.duration)}</dd><dt>Resolution</dt><dd>${v.width}×${v.height}</dd><dt>Uploaded</dt><dd>${new Date(v.created_at).toLocaleString()}</dd>${canManage(v)?`<dt>Original</dt><dd>${esc(v.filename)}, ${fmtB(v.size)}</dd><dt>Playback</dt><dd>${v.playback_path?"Compressed web version":"Original file"}</dd>`:""}</dl><div>${canManage(v)?actions(v):""}</div>${cm}`},
   async edit(id){if(!ME)return needAuth("edit");const{data:v,error}=await sb.from("videos").select("*").eq("id",id).maybeSingle();if(error)throw error;if(!v||!canManage(v))return notFound();
@@ -284,7 +304,7 @@ window.vidErr=el=>{const d=document.createElement("div");d.className="unavail";d
 let RT=0;const go=h=>location.hash===h?render():location.hash=h;
 async function render(){
   const my=++RT,[route,arg]=(location.hash.slice(2)||"home").split("/"),r=VIEWS[route]?route:"home";
-  if(!READY_CFG){$("#app").innerHTML=shell(r,`<div class="panel"><h2 style="margin-top:0">Supabase is not configured</h2><p>Open <b>index.html</b>, set <b>SUPABASE_URL</b> and <b>SUPABASE_ANON_KEY</b> at the top of the script, and run the SQL from the comment at the top of the file in your Supabase SQL Editor. Until then VYDE has no backend, so it shows no videos and accepts no uploads.</p></div>`);return}
+  if(!READY_CFG){$("#app").innerHTML=shell(r,(typeof supabase==="undefined"?`<div class="msg err" role="alert">The Supabase client library did not load from the CDN. Check your connection or content blocker.</div>`:"")+`<div class="panel"><h2 style="margin-top:0">Supabase is not configured</h2><p>Open <b>index.html</b>, set <b>SUPABASE_URL</b> and <b>SUPABASE_ANON_KEY</b> at the top of the script, and run the SQL from the comment at the top of the file in your Supabase SQL Editor. Until then VYDE has no backend, so it shows no videos and accepts no uploads.</p></div>`);return}
   if(r!=="upload"&&U.s!=="UPLOADING"&&U.s!=="PROCESSING")resetU();
   const mn=$("main");if(mn)mn.innerHTML=`<div class="acct">${acct()}</div>${loadingH}`;else $("#app").innerHTML=shell(r,loadingH);
   let html;try{html=await VIEWS[r](decodeURIComponent(arg||""))}catch(e){html=`<div class="msg err" role="alert">${esc(errMsg(e))}</div><button class="btn" data-act="reload">Retry</button>`}
@@ -308,7 +328,7 @@ document.addEventListener("click",async e=>{
     case"del":{if(!confirm("Permanently delete this video, its original file, playback version, thumbnail and comments? This cannot be undone."))return;
       return busy(b,"Deleting…",async()=>{await destroy(id);if(U.rec&&U.rec.id===id)resetU();toast("Video deleted permanently.");go("#/my")})}
     case"edit":return busy(b,"Saving…",async()=>{const{error}=await sb.from("videos").update({...readForm(),updated_at:new Date().toISOString()}).eq("id",id);if(error)throw error;toast("Changes saved.");go("#/watch/"+id)});
-    case"delc":return busy(b,"Deleting…",async()=>{const{error}=await sb.from("comments").delete().eq("id",id);if(error)throw error;render()});
+    case"delc":return busy(b,"Deleting…",async()=>{const{error}=await sb.from("comments").delete().eq("id",id);if(error)throw error;await refreshC()});
     case"mode":AUTHMODE=AUTHMODE==="up"?"in":"up";return render();
     case"signout":await sb.auth.signOut();return;
     case"reload":return render();
@@ -316,7 +336,7 @@ document.addEventListener("click",async e=>{
 document.addEventListener("submit",async e=>{
   const a=e.target.dataset.act;if(!a)return;e.preventDefault();const btn=e.target.querySelector("button:not([type=button])");
   if(a==="search")return go("#/search/"+encodeURIComponent($("#q").value));
-  if(a==="comment")return busy(btn,"Posting…",async()=>{const{error}=await sb.from("comments").insert({video_id:e.target.dataset.id,body:$("#cb").value.trim()});if(error)throw error;render()});
+  if(a==="comment")return busy(btn,"Posting…",async()=>{const{error}=await sb.from("comments").insert({video_id:e.target.dataset.id,body:$("#cb").value.trim()});if(error)throw error;await refreshC()});
   if(a==="auth")return busy(btn,"Please wait…",async()=>{const email=$("#a-email").value.trim(),password=$("#a-pass").value;
     if(AUTHMODE==="up"){const{data,error}=await sb.auth.signUp({email,password,options:{data:{username:$("#a-name").value.trim()}}});if(error)throw error;
       if(!data.session){toast("Check your email to confirm your account, then sign in.");AUTHMODE="in";return render()}}
@@ -332,8 +352,8 @@ addEventListener("beforeunload",e=>{if(U.s==="UPLOADING"||U.s==="PROCESSING"){e.
 /* ---------- Boot ---------- */
 (async()=>{
   if(READY_CFG){
-    try{const{data}=await sb.auth.getSession();ME=data.session?data.session.user:null}catch{}
-    sb.auth.onAuthStateChange((_ev,s)=>{const n=s?s.user:null;if((n&&n.id)!==(ME&&ME.id)){ME=n;render()}else ME=n});
+    try{const{data}=await sb.auth.getSession();ME=data.session?data.session.user:null;ensureProfile()}catch{}
+    sb.auth.onAuthStateChange((_ev,s)=>{const n=s?s.user:null;if((n&&n.id)!==(ME&&ME.id)){ME=n;setTimeout(ensureProfile,0);render()}else ME=n});
   }
   render();
 })();
