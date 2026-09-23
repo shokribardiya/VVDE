@@ -1,362 +1,460 @@
 <!DOCTYPE html>
-<!--
-VYDE — single-file frontend on a REAL centralized backend: Supabase Auth + Postgres + Storage.
-Static hosting (GitHub Pages) serves this page only. All data lives in YOUR Supabase project.
-Only the PUBLIC anon key is used here. NEVER put a service-role key in this file.
-Row Level Security is what protects data, so run ALL of the SQL below once in Supabase > SQL Editor.
-Also: Authentication > Providers > Email must be enabled. Storage max file size is set below (50 MB, free-tier limit).
-
-create table public.profiles(id uuid primary key references auth.users(id) on delete cascade, username text not null, created_at timestamptz not null default now());
-create table public.videos(
-  id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
-  title text not null check(char_length(title) between 1 and 120),
-  description text not null default '',
-  category text, tags text[] not null default '{}',
-  visibility text not null default 'public' check(visibility in ('public','private')),
-  allow_comments boolean not null default true,
-  status text not null default 'uploading' check(status in ('uploading','processing','ready','failed')),
-  filename text, mime_type text, size bigint, duration real, width int, height int,
-  original_path text not null, playback_path text, thumbnail_path text,
-  created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
-  check(original_path like owner_id::text||'/'||id::text||'/%'),
-  check(playback_path is null or playback_path like owner_id::text||'/'||id::text||'/%'),
-  check(thumbnail_path is null or thumbnail_path like owner_id::text||'/'||id::text||'/%'));
-create table public.comments(
-  id uuid primary key default gen_random_uuid(),
-  video_id uuid not null references public.videos(id) on delete cascade,
-  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
-  body text not null check(char_length(body) between 1 and 1000),
-  created_at timestamptz not null default now());
-create function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$
-begin insert into public.profiles(id,username) values(new.id, coalesce(nullif(new.raw_user_meta_data->>'username',''), split_part(new.email,'@',1))); return new; end $$;
-create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
-alter table public.profiles enable row level security;
-alter table public.videos enable row level security;
-alter table public.comments enable row level security;
-create policy "profiles readable" on public.profiles for select using (true);
-create policy "profile update own" on public.profiles for update using (id=auth.uid());
-create policy "profile insert own" on public.profiles for insert with check (id=auth.uid());
-create policy "videos read" on public.videos for select using ((visibility='public' and status='ready') or owner_id=auth.uid());
-create policy "videos insert own" on public.videos for insert with check (owner_id=auth.uid());
-create policy "videos update own" on public.videos for update using (owner_id=auth.uid()) with check (owner_id=auth.uid());
-create policy "videos delete own" on public.videos for delete using (owner_id=auth.uid());
-create policy "comments read" on public.comments for select using (exists(select 1 from public.videos v where v.id=video_id));
-create policy "comments insert" on public.comments for insert with check (user_id=auth.uid() and exists(select 1 from public.videos v where v.id=video_id and v.allow_comments));
-create policy "comments delete" on public.comments for delete using (user_id=auth.uid() or exists(select 1 from public.videos v where v.id=video_id and v.owner_id=auth.uid()));
-insert into storage.buckets(id,name,public,file_size_limit) values('vyde','vyde',false,52428800) on conflict (id) do nothing;
-create policy "files read own" on storage.objects for select using (bucket_id='vyde' and (storage.foldername(name))[1]=auth.uid()::text);
-create policy "files read public" on storage.objects for select to anon, authenticated using (bucket_id='vyde' and exists(select 1 from public.videos v where v.visibility='public' and v.status='ready' and name in (coalesce(v.playback_path,v.original_path), v.thumbnail_path)));
-create policy "files insert own" on storage.objects for insert to authenticated with check (bucket_id='vyde' and (storage.foldername(name))[1]=auth.uid()::text);
-create policy "files update own" on storage.objects for update to authenticated using (bucket_id='vyde' and (storage.foldername(name))[1]=auth.uid()::text);
-create policy "files delete own" on storage.objects for delete to authenticated using (bucket_id='vyde' and (storage.foldername(name))[1]=auth.uid()::text);
-
-The CHECK constraints force every stored path into the owner's own folder, so nobody can point a public video at another user's file.
-File layout in Storage: <userId>/<videoId>/original.<ext>, playback.webm, thumb.jpg. Originals stay private to the owner
-whenever a playback version exists; public viewers only receive playback + thumbnail via short-lived signed URLs.
--->
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>VYDE</title>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<meta name="description" content="VYDE — a premium independent video platform.">
+<meta property="og:title" content="VYDE"><meta property="og:description" content="Watch, discover and upload video."><meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23201610'/%3E%3Cpath d='M16 5l9 5H7z' fill='%23f3ece2'/%3E%3Ccircle cx='16' cy='19' r='7' fill='none' stroke='%23f3ece2' stroke-width='2.5'/%3E%3C/svg%3E">
 <style>
-:root{--bg:#17100b;--card:#2a1c13;--line:#43301f;--ink:#f4ecdf;--mut:#b9a58d;--acc:#e6a95a;--acc2:#b8623a;--ok:#8fc79a;--bad:#f0867a;color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:radial-gradient(1100px 560px at 85% -10%,#3d2515 0,transparent 60%),var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
-h1,h2,h3{font-family:Fraunces,Georgia,serif;margin:0;line-height:1.15}h1{font-size:clamp(28px,4vw,42px)}h2{font-size:22px;margin:32px 0 14px}h3{font-size:16px}
-a{color:inherit;text-decoration:none}p{margin:8px 0}.mut{color:var(--mut)}:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
-.side{padding:24px 14px;border-right:1px solid var(--line);position:sticky;top:0;height:100vh}
-.logo{font:700 30px Fraunces,serif;letter-spacing:.05em;padding:0 12px 20px;background:linear-gradient(90deg,var(--ink),var(--acc));-webkit-background-clip:text;background-clip:text;color:transparent}
-.side a{display:block;padding:10px 12px;border-radius:10px;color:var(--mut)}.side a.on,.side a:hover{background:var(--card);color:var(--ink)}
-main{padding:20px clamp(16px,4vw,48px) 110px;max-width:1240px;width:100%}.bot{display:none}
-@media(max-width:899px){.app{display:block}.side{display:none}
-.bot{display:flex;position:fixed;inset:auto 0 0 0;background:#120c08ee;backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom));z-index:5}
-.bot a{flex:1;text-align:center;padding:8px 2px;font-size:12px;color:var(--mut)}.bot a.on{color:var(--acc)}}
-.acct{display:flex;justify-content:flex-end;gap:10px;align-items:center;margin-bottom:10px;color:var(--mut);font-size:13px}
-.hero{border:1px solid var(--line);border-radius:22px;padding:clamp(22px,4vw,44px);background:linear-gradient(135deg,#3b2415,#1d120b 70%)}.hero p{max-width:60ch;color:var(--mut)}
-.btn{display:inline-block;border:0;border-radius:999px;padding:10px 20px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#1b0f08;font:600 14px system-ui;cursor:pointer;margin:6px 8px 6px 0}
-.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}.btn.danger{background:transparent;color:var(--bad);border:1px solid #6b3530}.btn[disabled]{opacity:.5;cursor:not-allowed}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:22px}
-.th{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(135deg,#4a2e1a,#170f0a);display:grid;place-items:center;color:var(--mut);font-size:12px}
-.th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.dur{position:absolute;right:8px;bottom:8px;font:600 11px system-ui;background:#000b;padding:2px 6px;border-radius:5px}
-.card h3{margin:10px 0 2px}.card p{margin:0;color:var(--mut);font-size:13px}
-.row{display:grid;grid-template-columns:150px 1fr;gap:16px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card);margin:12px 0}@media(max-width:600px){.row{grid-template-columns:100px 1fr}}
-.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mut)}.badge.ok{color:var(--ok);border-color:#3f6b4a}.badge.bad{color:var(--bad);border-color:#6b3530}
-.player{aspect-ratio:16/9;background:#000;border-radius:16px;overflow:hidden;border:1px solid var(--line)}.player video{width:100%;height:100%;display:block;background:#000}
-.unavail{aspect-ratio:16/9;display:grid;place-items:center;text-align:center;padding:20px;border-radius:16px;border:1px dashed var(--line);background:var(--card);color:var(--mut)}
-.panel{border:1px solid var(--line);border-radius:18px;background:var(--card);padding:20px;margin:16px 0}
-.steps{display:flex;gap:6px;list-style:none;padding:0;margin:0 0 16px;flex-wrap:wrap}.steps li{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
-.steps li.done{color:var(--ok);border-color:#3f6b4a}.steps li.on{color:#1b0f08;background:var(--acc);border-color:var(--acc)}
-.drop{display:grid;place-items:center;text-align:center;min-height:200px;border:2px dashed var(--line);border-radius:18px;cursor:pointer;padding:20px}.drop.over{border-color:var(--acc)}.drop input{position:absolute;opacity:0;width:1px;height:1px}
-dl{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;margin:12px 0}dt{color:var(--mut)}dd{margin:0;word-break:break-all}
-.form{display:grid;gap:12px;margin:14px 0;max-width:560px}label{display:grid;gap:4px;font-size:13px;color:var(--mut)}label.chk{display:flex;gap:8px;align-items:center}
-input:not([type=checkbox]),textarea,select{background:#120c08;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;width:100%}
-progress{width:100%;height:10px;accent-color:var(--acc)}.sf{display:flex;gap:8px;margin:16px 0 18px}
-.msg{padding:10px 14px;border-radius:12px;margin:12px 0;border:1px solid var(--line)}.msg.ok{border-color:#3f6b4a;color:var(--ok)}.msg.err{border-color:#6b3530;color:var(--bad)}
-.spin{width:18px;height:18px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--acc);display:inline-block;vertical-align:middle;margin-right:8px;animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.spin{animation:none}}
-.empty{text-align:center;padding:60px 10px}.av{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font:700 30px Fraunces,serif;color:#1b0f08}
-.cm{padding:12px 0;border-top:1px solid var(--line)}.cm p{margin:4px 0}
-#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);padding:10px 18px;border-radius:12px;z-index:9;display:none}
+:root{--bg:#15100d;--s:#1f1712;--s2:#2b2018;--t:#f3ece2;--m:#b3a28e;--a:#e3c9a0;--b:#3a2d23;--r:12px;--hd:60px;--sw:220px;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+[data-theme=light]{--bg:#f6f0e7;--s:#fffaf2;--s2:#ebe1d3;--t:#241a12;--m:#6f5f4e;--a:#8a5a22;--b:#d9cbb8}
+*{box-sizing:border-box;margin:0}html{scrollbar-color:var(--b) transparent}
+body{background:radial-gradient(1200px 500px at 50% -10%,#3a2618 0,transparent 70%) no-repeat,var(--bg);color:var(--t);min-height:100vh;overflow-x:hidden}
+[data-theme=light] body{background:var(--bg)}
+a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0}
+:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+header{position:sticky;top:0;z-index:30;height:var(--hd);display:flex;align-items:center;gap:12px;padding:0 16px;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--b)}
+.logo{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:.32em;font-size:17px}.logo svg{width:28px;height:28px;stroke-width:2}
+.search{flex:1;max-width:620px;margin:0 auto;position:relative}
+.search input{width:100%;height:40px;padding:0 74px 0 40px;border-radius:99px;border:1px solid var(--b);background:var(--s)}
+.search>svg{position:absolute;left:13px;top:10px;color:var(--m)}.search kbd{position:absolute;right:14px;top:10px;font-size:11px;color:var(--m);border:1px solid var(--b);border-radius:5px;padding:1px 6px}
+.sug{position:absolute;top:46px;left:0;right:0;background:var(--s2);border:1px solid var(--b);border-radius:var(--r);padding:6px;display:none;box-shadow:0 20px 50px #0008}.sug.on{display:block}
+.sug a{display:block;padding:8px 10px;border-radius:8px}.sug a:hover{background:var(--b)}
+.ic{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;position:relative}.ic:hover{background:var(--s2)}
+.btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border-radius:99px;background:var(--s2);border:1px solid var(--b);font-weight:600;transition:transform .15s}
+.btn:active{transform:scale(.96)}.btn.p{background:var(--a);color:#1b120b;border-color:var(--a)}[data-theme=light] .btn.p{color:#fff}
+.av{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;flex:none;color:#fff}
+.dd{position:absolute;right:0;top:48px;min-width:230px;background:var(--s2);border:1px solid var(--b);border-radius:var(--r);padding:6px;display:none;box-shadow:0 20px 50px #0008;z-index:40;animation:pop .15s}
+.dd.on{display:block}.dd a,.dd button{display:flex;gap:10px;width:100%;padding:9px 10px;border-radius:8px;text-align:left}.dd a:hover,.dd button:hover{background:var(--b)}
+@keyframes pop{from{opacity:0;transform:translateY(-4px)}}
+.wrap{display:flex}
+aside{width:var(--sw);flex:none;position:sticky;top:var(--hd);height:calc(100vh - var(--hd));overflow:auto;padding:14px 10px;border-right:1px solid var(--b);transition:width .2s}
+aside h6{font-size:12px;color:var(--m);padding:14px 12px 6px;font-weight:600}
+aside a{display:flex;align-items:center;gap:14px;padding:9px 12px;border-radius:10px;color:var(--m)}aside a:hover{background:var(--s2);color:var(--t)}aside a.on{background:var(--s2);color:var(--t);font-weight:600}
+body.min aside{width:66px}body.min aside h6,body.min aside a span{display:none}
+main{flex:1;min-width:0;padding:22px clamp(14px,3vw,36px) 90px}
+.grid{display:grid;gap:22px 16px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+h1{font-size:clamp(26px,4vw,44px);letter-spacing:-.02em;line-height:1.1}h2{font-size:21px;margin:34px 0 14px;display:flex;justify-content:space-between;align-items:baseline}h2 a{font-size:14px;color:var(--m)}
+.hero{position:relative;min-height:400px;border-radius:20px;overflow:hidden;display:flex;align-items:flex-end;padding:clamp(18px,4vw,44px);border:1px solid var(--b)}
+.hero>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(to top,#150e09f0 8%,#150e0955 60%,transparent)}
+.hero>div{position:relative;z-index:1;max-width:620px;color:#f3ece2}.hero p{margin:12px 0 18px;opacity:.85}.hero .row{display:flex;gap:10px;flex-wrap:wrap}
+.chip{display:inline-block;padding:6px 14px;border-radius:99px;background:var(--s2);border:1px solid var(--b);font-size:14px;white-space:nowrap}.chip.on{background:var(--t);color:var(--bg)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+.card .th{position:relative;display:block;aspect-ratio:16/9;border-radius:var(--r);overflow:hidden;background:var(--s)}.card img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
+.card:hover img{transform:scale(1.05)}.dur{position:absolute;right:8px;bottom:8px;background:#000b;color:#fff;font-size:12px;padding:2px 7px;border-radius:6px}
+.pl{position:absolute;inset:0;display:grid;place-items:center;opacity:0;transition:.2s;background:#0004;color:#fff}.card:hover .pl{opacity:1}.pl svg{width:44px;height:44px;fill:#fff}
+.card .meta{display:flex;gap:10px;margin-top:10px;position:relative}.tt{font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sub{font-size:13px;color:var(--m);margin-top:3px}.card .meta .ic{margin-left:auto;width:32px;height:32px}
+.acard{border:1px solid var(--b);border-radius:var(--r);overflow:hidden;background:var(--s);display:block}.acard img{width:100%;aspect-ratio:16/8;object-fit:cover}.acard div{padding:14px}
+.ccard{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px;border:1px solid var(--b);border-radius:var(--r);background:var(--s);text-align:center}.ccard .av{width:64px;height:64px;font-size:24px}
+.sk{aspect-ratio:16/11;border-radius:var(--r);background:linear-gradient(90deg,var(--s) 25%,var(--s2) 50%,var(--s) 75%) 0 0/200% 100%;animation:sh 1.3s infinite}@keyframes sh{to{background-position:-200% 0}}
+.watch{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:26px}.theater .watch{grid-template-columns:1fr}
+.player{position:relative;background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;color:#fff}.stage{position:absolute;inset:0;display:grid;place-items:center;background-size:cover;background-position:center}.media{width:100%;height:100%;object-fit:contain;background:#000;position:absolute;inset:0}
+.bar{position:absolute;left:0;right:0;bottom:0;padding:26px 12px 8px;background:linear-gradient(transparent,#000c);display:flex;flex-direction:column;gap:4px}.bar .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bar select{background:#0008;border:1px solid #fff3;border-radius:6px;padding:2px 4px;color:#fff}
+input[type=range]{accent-color:var(--a);width:100%}.bar .vol{width:70px}
+.act{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.box{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px}
+.cm{display:flex;gap:10px;margin:14px 0}.cm .rep{margin-left:44px}
+input.f,textarea.f,select.f{width:100%;padding:10px 12px;background:var(--s);border:1px solid var(--b);border-radius:10px}
+label{display:block;margin:12px 0 5px;font-size:14px;color:var(--m)}
+.drop{border:2px dashed var(--b);border-radius:20px;padding:60px 20px;text-align:center;background:var(--s);transition:.2s}.drop.hot{border-color:var(--a);background:var(--s2)}.filecard{display:grid;grid-template-columns:110px 1fr auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--b);border-radius:14px;background:var(--s);margin-top:12px}
+.filethumb{width:110px;aspect-ratio:16/9;border-radius:10px;object-fit:cover;background:#000}
+.filemeta{min-width:0}.filemeta b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:4px 8px;border-radius:99px;border:1px solid var(--b);font-size:12px;color:var(--m)}
+.status.ok{color:var(--t);border-color:var(--a)}.status.err{color:#e0664f;border-color:#e0664f}
+.local-note{margin:0 0 18px;padding:12px 14px;border:1px solid var(--b);border-radius:12px;background:var(--s);color:var(--m)}
+.minirow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.danger{border-color:#e0664f!important;color:#e0664f!important}
+
+.steps{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}.steps span{padding:6px 14px;border-radius:99px;border:1px solid var(--b);color:var(--m);font-size:14px}.steps .on{background:var(--t);color:var(--bg)}
+.prog{height:8px;border-radius:9px;background:var(--b);overflow:hidden;margin:10px 0}.prog i{display:block;height:100%;width:0;background:var(--a);transition:width .2s}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--b);margin:18px 0}.tabs button{padding:10px 16px;color:var(--m);border-bottom:2px solid transparent}.tabs .on{color:var(--t);border-color:var(--a)}
+.banner{height:170px;border-radius:20px}.ph{display:flex;gap:18px;align-items:center;margin-top:-34px;padding:0 20px;flex-wrap:wrap}.ph .av{width:88px;height:88px;font-size:34px;border:4px solid var(--bg)}
+.art{max-width:720px;margin:auto}.art .body{line-height:1.75;font-size:18px}.art .body>*{margin:1em 0}.art blockquote{border-left:3px solid var(--a);padding-left:16px;color:var(--m)}.art pre{background:var(--s);padding:12px;border-radius:8px;overflow:auto}
+.ed{min-height:240px;padding:14px;border:1px solid var(--b);border-radius:10px;background:var(--s)}
+.empty{text-align:center;padding:60px 10px;color:var(--m)}
+.metric{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}.metric b{font-size:30px;display:block}
+table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid var(--b);text-align:left}
+#toasts{position:fixed;right:16px;bottom:78px;display:flex;flex-direction:column;gap:8px;z-index:90}.toast{background:var(--s2);border:1px solid var(--b);border-left:4px solid var(--a);padding:12px 16px;border-radius:10px;animation:pop .2s}.toast.error{border-left-color:#e0664f}
+#modal{position:fixed;inset:0;background:#000a;display:none;place-items:center;z-index:80;padding:16px}#modal.on{display:grid}#modal .box{width:min(460px,100%);animation:pop .2s;background:var(--s2)}
+nav.bn{display:none}.mh{display:none}
+@media(max-width:1100px){.watch{grid-template-columns:1fr}}
+@media(max-width:820px){aside{position:fixed;z-index:50;left:0;top:var(--hd);bottom:0;height:auto;background:var(--bg);transform:translateX(-100%);transition:transform .25s;width:250px!important}body.drawer aside{transform:none}body.min aside h6,body.min aside a span{display:inline}.kb,.dsk{display:none!important}
+ .grid{grid-template-columns:1fr}main{padding-bottom:96px}.hero{min-height:320px}
+ nav.bn{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;bottom:0;left:0;right:0;z-index:35;background:var(--s);border-top:1px solid var(--b);padding:6px 0 max(6px,env(safe-area-inset-bottom))}
+ nav.bn a{display:flex;flex-direction:column;align-items:center;font-size:11px;gap:2px;color:var(--m);padding:4px}nav.bn a.on{color:var(--t)}nav.bn .plus{background:var(--a);color:#1b120b;border-radius:14px;width:44px;height:36px;justify-content:center;margin:auto}#toasts{bottom:86px}}
+@media(min-width:1500px){.grid{grid-template-columns:repeat(5,1fr)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 </head>
 <body>
-<div id="app"></div><div id="toast" role="status"></div>
+<div id="root"></div><div id="toasts" aria-live="polite"></div><div id="modal" role="dialog" aria-modal="true"></div>
 <script>
 "use strict";
-/* ======================= CONFIGURATION — REPLACE THESE TWO VALUES ======================= */
-const SUPABASE_URL="https://YOUR-PROJECT-REF.supabase.co";   // <-- your Supabase project URL
-const SUPABASE_ANON_KEY="YOUR-PUBLIC-ANON-KEY";                // <-- PUBLIC anon key only. Never a service-role key.
-const BUCKET="vyde", MAX_UPLOAD_MB=50;                         // keep MAX_UPLOAD_MB <= your Storage file size limit
-/* ======================================================================================== */
-const READY_CFG=!/YOUR-/.test(SUPABASE_URL+SUPABASE_ANON_KEY)&&typeof supabase!=="undefined";
-const sb=READY_CFG?supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
-const $=s=>document.querySelector(s);
+/* ================= CONFIG / IMPORTANT LIMITATION =================
+ This is a GitHub-only single-file application. Real user-selected video files are now read
+ from the device, stored as Blobs in IndexedDB, optimized for playback with browser APIs when
+ supported, and the original remains available for download/deletion. This still does NOT create
+ a centralized cross-user video service: GitHub Pages cannot accept arbitrary visitor uploads into
+ shared storage by itself. The BackendAdapter remains isolated for future server integration.
+ Authentication below is LOCAL ONLY (PBKDF2 + salt via Web Crypto).
+ ================================================================= */
+const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const fmtB=n=>{if(n==null)return"—";const u=["B","KB","MB","GB"];let i=0;while(n>=1024&&i<3){n/=1024;i++}return n.toFixed(i?1:0)+" "+u[i]};
-const fmtD=s=>{if(!s)return"—";s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=String(s%60).padStart(2,"0");return h?`${h}:${String(m).padStart(2,"0")}:${x}`:`${m}:${x}`};
-const toast=(m,bad)=>{const t=$("#toast");t.textContent=m;t.style.display="block";t.style.color=bad?"var(--bad)":"var(--ink)";clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display="none",4000)};
-const errMsg=e=>(e&&(e.message||e.error_description||e.error))||"Unknown error.";
-const CATS=["Entertainment","Education","Music","Travel","Food","Sports","Gaming","Other"];
-let ME=null,AUTHMODE="in";
-const canManage=v=>ME&&v.owner_id===ME.id;
-
-async function ensureProfile(){if(!ME)return;try{await sb.from("profiles").upsert({id:ME.id,username:(ME.user_metadata&&ME.user_metadata.username)||(ME.email||"user").split("@")[0]},{onConflict:"id",ignoreDuplicates:true})}catch{}}
-
-/* ---------- Data access (all through Supabase; RLS enforces ownership server-side) ---------- */
-const SEL="*, profiles(username)";
-async function sign(paths,ttl=3600){paths=[...new Set(paths.filter(Boolean))];if(!paths.length)return{};
-  const{data,error}=await sb.storage.from(BUCKET).createSignedUrls(paths,ttl);if(error)throw error;
-  const m={};data.forEach(x=>{if(x.signedUrl)m[x.path]=x.signedUrl});return m}
-async function listPublic(q){
-  let r=sb.from("videos").select(SEL).eq("status","ready").eq("visibility","public").order("created_at",{ascending:false}).limit(60);
-  const s=(q||"").replace(/[,()%*]/g," ").trim();if(s)r=r.or(`title.ilike.%${s}%,description.ilike.%${s}%`);
-  const{data,error}=await r;if(error)throw error;return data}
-async function destroy(id){ // permanently removes ALL stored files, verifies they are gone, then removes the database row
-  const dir=`${ME.id}/${id}`,st=sb.storage.from(BUCKET);
-  await sb.from("videos").update({status:"failed"}).eq("id",id); // hide from public viewers before the files disappear
-  const{data:fl,error:e1}=await st.list(dir);if(e1)throw e1;
-  if(fl.length){const{error}=await st.remove(fl.map(x=>`${dir}/${x.name}`));if(error)throw error}
-  const{data:left,error:e2}=await st.list(dir);if(e2)throw e2;
-  if(left.length)throw new Error("Some stored files could not be removed. Try again.");
-  const{data:gone,error}=await sb.from("videos").delete().eq("id",id).select("id");if(error)throw error;
-  if(!gone.length){const{data:c}=await sb.from("videos").select("id").eq("id",id).maybeSingle();if(c)throw new Error("The database record was not deleted (not permitted).")}}
-async function put(path,blob,onp){ // real byte-level progress via XHR to the Storage REST endpoint, authenticated with the user's JWT
-  const{data:{session}}=await sb.auth.getSession();if(!session)throw new Error("You are signed out. Sign in and retry.");
-  return new Promise((ok,no)=>{const x=new XMLHttpRequest();
-    x.open("POST",`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`);
-    x.setRequestHeader("Authorization","Bearer "+session.access_token);x.setRequestHeader("apikey",SUPABASE_ANON_KEY);
-    x.setRequestHeader("x-upsert","true");x.setRequestHeader("Content-Type",blob.type||"application/octet-stream");
-    x.upload.onprogress=e=>e.lengthComputable&&onp&&onp(e.loaded,e.total);
-    x.onload=()=>{if(x.status<300)return ok();let m="Storage rejected the upload ("+x.status+").";try{m=JSON.parse(x.responseText).message||m}catch{}no(new Error(m))};
-    x.onerror=()=>no(new Error("Network error during upload."));x.onabort=()=>no(new Error("Upload cancelled."));
-    U.xhr=x;x.send(blob)})}
-
-/* ---------- Validation, metadata, thumbnail (real media APIs) ---------- */
-const EXT=/\.(mp4|m4v|mov|webm|ogv|ogg|mkv)$/i;
-function validate(f){
-  if(!(f instanceof File))return"No file was selected.";
-  if(f.size===0)return"This file is empty (0 bytes).";
-  if(!EXT.test(f.name))return"Unsupported extension. Use MP4, M4V, MOV, WebM, OGV or MKV.";
-  if(f.type&&!f.type.startsWith("video/"))return`This file is not a video (type: ${f.type}).`;
-  if(f.size>MAX_UPLOAD_MB*1048576)return`This file is ${fmtB(f.size)}. The upload limit is ${MAX_UPLOAD_MB} MB.`;
-  return null}
-function probe(file){return new Promise((res,rej)=>{
-  const url=URL.createObjectURL(file),v=document.createElement("video");let info=null,t;
-  v.preload="metadata";v.muted=true;v.playsInline=true;
-  const done=(f,x)=>{clearTimeout(t);v.onerror=v.onloadedmetadata=v.onseeked=null;v.removeAttribute("src");v.load();URL.revokeObjectURL(url);f(x)};
-  t=setTimeout(()=>info?done(res,{...info,thumb:null}):done(rej,new Error("Timed out while reading video metadata.")),20000);
-  v.onerror=()=>done(rej,new Error("The browser cannot read this file as a video."));
-  v.onloadedmetadata=()=>{if(!v.videoWidth)return done(rej,new Error("No video track found in this file."));
-    const d=isFinite(v.duration)?v.duration:0;info={duration:d,width:v.videoWidth,height:v.videoHeight};v.currentTime=d>0?Math.min(Math.max(d*.1,.1),d/2):0};
-  v.onseeked=()=>{const c=document.createElement("canvas"),k=Math.min(1,640/v.videoWidth);c.width=Math.round(v.videoWidth*k);c.height=Math.round(v.videoHeight*k);
-    try{c.getContext("2d").drawImage(v,0,0,c.width,c.height);c.toBlob(b=>done(res,{...info,thumb:b||null}),"image/jpeg",.82)}catch{done(res,{...info,thumb:null})}};
-  v.src=url})}
-
-/* ---------- Real browser-side compression (720p re-encode via canvas + MediaRecorder; runs in real time) ---------- */
-const canCompress=()=>!!(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream&&window.AudioContext);
-function transcode(file,info,onp){return new Promise((ok,no)=>{
-  const MR=window.MediaRecorder,mime=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4"].find(t=>MR.isTypeSupported(t));
-  if(!mime)return no(new Error("No supported recording format."));
-  const url=URL.createObjectURL(file),v=document.createElement("video"),k=Math.min(1,720/info.height),c=document.createElement("canvas"),g=c.getContext("2d"),chunks=[];
-  c.width=Math.round(info.width*k/2)*2;c.height=Math.round(info.height*k/2)*2;v.src=url;v.playsInline=true;
-  let ac,rec,raf,dead=false;
-  const vis=()=>{if(dead||!rec)return;if(document.hidden){v.pause();if(rec.state==="recording")rec.pause()}else{if(rec.state==="paused")rec.resume();v.play().catch(()=>{})}};
-  document.addEventListener("visibilitychange",vis);
-  const end=(f,x)=>{if(dead)return;dead=true;document.removeEventListener("visibilitychange",vis);cancelAnimationFrame(raf);try{rec&&rec.state!=="inactive"&&rec.stop()}catch{}v.pause();v.removeAttribute("src");v.load();URL.revokeObjectURL(url);ac&&ac.close().catch(()=>{});f(x)};
-  U.abortT=()=>end(no,new Error("skipped"));
-  v.onerror=()=>end(no,new Error("The browser could not decode this video for compression."));
-  v.onended=()=>{rec.onstop=()=>end(ok,new Blob(chunks,{type:mime.split(";")[0]}));rec.stop()};
-  v.onloadedmetadata=async()=>{try{
-    ac=new AudioContext();await ac.resume();const d=ac.createMediaStreamDestination();ac.createMediaElementSource(v).connect(d);
-    const st=c.captureStream(30);d.stream.getAudioTracks().forEach(t=>st.addTrack(t));
-    rec=new MR(st,{mimeType:mime,videoBitsPerSecond:2500000,audioBitsPerSecond:128000});rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-    const draw=()=>{g.drawImage(v,0,0,c.width,c.height);onp(v.currentTime/info.duration);raf=requestAnimationFrame(draw)};
-    rec.start(1000);await v.play();draw()}catch(e){end(no,e)}}})}
-
-/* ---------- Shared UI ---------- */
-const NAV=[["home","Home"],["search","Search"],["upload","Upload"],["my","My videos"],["profile","Profile"]];
-const acct=()=>ME?`<span>${esc(ME.user_metadata?.username||ME.email)}</span><a class="btn ghost" style="margin:0;padding:6px 14px" href="#/profile">Profile</a><button class="btn ghost" style="margin:0;padding:6px 14px" data-act="signout">Sign out</button>`:`<a class="btn" style="margin:0;padding:6px 14px" href="#/auth">Sign in</a>`;
-const shell=(r,h)=>`<div class="app"><nav class="side"><div class="logo">VYDE</div>${NAV.map(n=>`<a href="#/${n[0]}" class="${r===n[0]?"on":""}">${n[1]}</a>`).join("")}</nav><main><div class="acct">${acct()}</div>${h}</main></div><nav class="bot">${NAV.map(n=>`<a href="#/${n[0]}" class="${r===n[0]?"on":""}">${n[1]}</a>`).join("")}</nav>`;
-const loadingH=`<p class="mut"><span class="spin"></span>Loading…</p>`;
-const notFound=()=>`<div class="empty"><h2>Video not found</h2><p class="mut">It may have been deleted, or it is private.</p><a class="btn" href="#/home">Back to Home</a></div>`;
-const needAuth=w=>`<div class="empty"><h2>Sign in to ${w}</h2><a class="btn" href="#/auth">Sign in or create an account</a></div>`;
-const card=(v,m)=>`<a class="card" href="#/watch/${v.id}"><div class="th">${m[v.thumbnail_path]?`<img src="${m[v.thumbnail_path]}" alt="" loading="lazy">`:"No preview"}${v.duration?`<b class="dur">${fmtD(v.duration)}</b>`:""}</div><h3>${esc(v.title)}</h3><p>${esc(v.profiles?.username||"Unknown")}${v.category?", "+esc(v.category):""}</p></a>`;
-const grid=(L,m,empty)=>L.length?`<div class="grid">${L.map(v=>card(v,m)).join("")}</div>`:`<p class="mut">${empty}</p>`;
-const formH=f=>`<div class="form"><label>Title<input id="f-title" maxlength="120" value="${esc(f.title)}"></label>
-<label>Description<textarea id="f-desc" rows="3">${esc(f.description)}</textarea></label>
-<label>Category<select id="f-cat">${CATS.map(c=>`<option ${c===f.category?"selected":""}>${c}</option>`).join("")}</select></label>
-<label>Tags (comma separated)<input id="f-tags" value="${esc((f.tags||[]).join(", "))}"></label>
-<label>Visibility<select id="f-vis"><option value="public" ${f.visibility!=="private"?"selected":""}>Public: everyone can watch once ready</option><option value="private" ${f.visibility==="private"?"selected":""}>Private: only you</option></select></label>
-<label class="chk"><input type="checkbox" id="f-com" ${f.allow_comments!==false?"checked":""}> Allow comments</label></div>`;
-const readForm=()=>({title:($("#f-title").value.trim()||"Untitled video").slice(0,120),description:$("#f-desc").value.trim(),category:$("#f-cat").value,tags:$("#f-tags").value.split(",").map(s=>s.trim()).filter(Boolean),visibility:$("#f-vis").value,allow_comments:$("#f-com").checked});
-const actions=v=>`<a class="btn" href="#/watch/${v.id}">Watch</a>${canManage(v)?`<button class="btn ghost" data-act="dl" data-id="${v.id}">Download Original</button><a class="btn ghost" href="#/edit/${v.id}">Edit</a><button class="btn danger" data-act="del" data-id="${v.id}">Delete</button>`:""}`;
-
-/* ---------- Upload pipeline: real states only ---------- */
-let U={s:"IDLE",tok:Symbol()};
-const STEPS=["Choose file","Selected","Analyzing","Uploading","Processing","Ready"];
-const IDX={IDLE:0,SELECTED:1,VALIDATING:2,VALIDATION_ERROR:0,ANALYZED:3,UPLOADING:3,PROCESSING:4,FAILED:3,READY:6};
-function resetU(){if(U.thumbURL)URL.revokeObjectURL(U.thumbURL);U={s:"IDLE",tok:Symbol()}}
-const ru=()=>{const el=$("#ub");if(el)el.innerHTML=uploadH()};
-function uploadH(){
-  const i=IDX[U.s],f=U.file,st=`<ol class="steps">${STEPS.map((s,k)=>`<li class="${k<i?"done":k===i?"on":""}">${s}</li>`).join("")}</ol>`,err=U.err?`<div class="msg err" role="alert">${esc(U.err)}</div>`:"";
-  if(U.s==="IDLE"||U.s==="VALIDATION_ERROR")return st+err+`<label class="drop" id="drop"><input type="file" id="file" accept="video/*,.mkv,.mov"><div><h3>Choose a video file</h3><p class="mut">Drop a file here or tap to browse. Up to ${MAX_UPLOAD_MB} MB.</p></div></label>`;
-  if(U.s==="SELECTED"||U.s==="VALIDATING")return st+`<p><span class="spin"></span>Analyzing video: ${esc(f.name)}</p><button class="btn ghost" data-act="cancel">Cancel</button>`;
-  const th=U.thumbURL?`<div class="th" style="max-width:360px"><img src="${U.thumbURL}" alt="Frame from your video"></div>`:`<p class="mut">No preview frame could be extracted.</p>`;
-  if(U.s==="ANALYZED"){const cc=canCompress()&&U.duration>0;
-    return st+th+`<dl><dt>Filename</dt><dd>${esc(f.name)}</dd><dt>Size</dt><dd>${fmtB(f.size)}</dd><dt>Type</dt><dd>${esc(f.type||"not reported")}</dd><dt>Duration</dt><dd>${U.duration?fmtD(U.duration):"not reported"}</dd><dt>Dimensions</dt><dd>${U.width}×${U.height}</dd></dl>`+formH(U.form||{title:U.title,tags:[],visibility:"public",category:CATS[0],allow_comments:true,description:""})+
-    `<label class="chk"><input type="checkbox" id="f-cmp" ${cc?"":"disabled"} ${cc&&(U.height>720||f.size>40e6)?"checked":""}> Also create a compressed 720p web version (takes about as long as the video plays; it pauses while this tab is hidden)</label>${cc?"":`<p class="mut">Browser-side compression is unavailable. The original will be used for playback.</p>`}<button class="btn" data-act="save">Upload video</button><button class="btn ghost" data-act="cancel">Choose a different file</button>`}
-  if(U.s==="UPLOADING"){const p=U.prog,pc=p?Math.round(p.l/p.t*100):0;return st+`<p><span class="spin"></span>${esc(U.stage||"Preparing upload")}${p?`: ${fmtB(p.l)} of ${fmtB(p.t)} (${pc}%)`:""}</p><progress max="100" value="${pc}"></progress><button class="btn ghost" data-act="abort">Cancel upload</button>`}
-  if(U.s==="PROCESSING")return st+`<p><span class="spin"></span>Creating compressed web version… it pauses while this tab is hidden.</p><progress id="tp" max="1" value="${U.tp||0}"></progress><p class="mut">Your original file is already uploaded.</p><button class="btn ghost" data-act="skip">Skip compression</button>`;
-  if(U.s==="FAILED")return st+err+`<p class="mut">Nothing is marked as published until every step succeeds.</p><button class="btn" data-act="retry">Retry</button><button class="btn danger" data-act="discard">Discard and remove partial upload</button>`;
-  const pub=U.rec.visibility==="public";
-  return st+`<div class="msg ok">${pub?"Uploaded to VYDE. It is now available to everyone.":"Uploaded to VYDE as private. Only you can see it."}</div>${U.note?`<p class="mut">${esc(U.note)}</p>`:""}${th}${actions(U.rec)}<button class="btn ghost" data-act="again">Upload another</button>`}
-async function pick(file){
-  resetU();const tok=U.tok;U.file=file;U.s="SELECTED";ru();
-  const e=validate(file);if(e){U.s="VALIDATION_ERROR";U.err=e;return ru()}
-  U.s="VALIDATING";ru();
-  try{const info=await probe(file);if(U.tok!==tok)return;Object.assign(U,info,{s:"ANALYZED",thumbURL:info.thumb?URL.createObjectURL(info.thumb):null,title:file.name.replace(/\.[^.]+$/,"")});ru()}
-  catch(x){if(U.tok===tok){U.s="VALIDATION_ERROR";U.err=errMsg(x);ru()}}}
-async function run(){
-  const f=U.file,d=U.d||(U.d={id:crypto.randomUUID()}),base=`${ME.id}/${d.id}/`,ext=(f.name.match(/\.[^.]+$/)||[".mp4"])[0].toLowerCase(),op=base+"original"+ext;
-  try{
-    U.s="UPLOADING";U.err=null;U.prog=null;U.stage="Creating record";ru();
-    if(!d.row){const{error}=await sb.from("videos").insert({id:d.id,...U.form,filename:f.name,mime_type:f.type||null,size:f.size,duration:U.duration,width:U.width,height:U.height,original_path:op,status:"uploading"});if(error)throw error;d.row=1}else await sb.from("videos").update({status:"uploading"}).eq("id",d.id);
-    if(U.thumb&&!d.thumb){U.stage="Uploading thumbnail";ru();await put(base+"thumb.jpg",U.thumb);d.thumb=1}
-    if(!d.orig){U.stage="Uploading original";ru();await put(op,f,(l,t)=>{U.prog={l,t};ru()});d.orig=1}
-    if(U.compress&&!U.skip&&!d.pblob){U.s="PROCESSING";U.tp=0;ru();await sb.from("videos").update({status:"processing"}).eq("id",d.id);
-      try{d.pblob=await transcode(f,U,x=>{U.tp=x;const p=$("#tp");if(p)p.value=x})}
-      catch(e){U.skip=true;if(e.message!=="skipped")U.note="Compression failed ("+e.message+"). The original is used for playback."}}
-    if(d.pblob&&!d.pp){U.s="UPLOADING";U.stage="Uploading web playback version";U.prog=null;ru();const pp=base+"playback."+(d.pblob.type.includes("mp4")?"mp4":"webm");await put(pp,d.pblob,(l,t)=>{U.prog={l,t};ru()});d.pp=pp}
-    U.stage="Verifying stored files";U.prog=null;ru();
-    const{data:fl,error:le}=await sb.storage.from(BUCKET).list(`${ME.id}/${d.id}`);if(le)throw le;
-    const have=new Set(fl.map(x=>x.name));
-    if(!have.has("original"+ext)||(d.thumb&&!have.has("thumb.jpg"))||(d.pp&&!have.has(d.pp.split("/").pop())))throw new Error("Storage verification failed: an uploaded file was not found. Retry the upload.");
-    const{data,error}=await sb.from("videos").update({status:"ready",playback_path:d.pp||null,thumbnail_path:d.thumb?base+"thumb.jpg":null,updated_at:new Date().toISOString()}).eq("id",d.id).select().single();
-    if(error)throw error;U.rec=data;U.s="READY";ru()
-  }catch(e){U.s="FAILED";U.err=errMsg(e);ru();if(d.row)sb.from("videos").update({status:"failed"}).eq("id",d.id).then(()=>{},()=>{})}}
-
-/* ---------- Comments (refreshed in place so the video keeps playing) ---------- */
-let CUR=null;
-async function commentsH(v){
-  if(!v.allow_comments)return`<p class="mut">Comments are turned off.</p>`;
-  const{data:C,error}=await sb.from("comments").select("*, profiles(username)").eq("video_id",v.id).order("created_at",{ascending:false});if(error)throw error;
-  return`<h2>Comments (${C.length})</h2>${ME?`<form class="sf" data-act="comment" data-id="${v.id}"><input id="cb" maxlength="1000" placeholder="Add a comment" required><button class="btn" style="margin:0">Post</button></form>`:`<p class="mut"><a href="#/auth" style="color:var(--acc)">Sign in</a> to comment.</p>`}${C.map(c=>`<div class="cm"><b>${esc(c.profiles?.username||"Unknown")}</b> <span class="mut">${new Date(c.created_at).toLocaleString()}</span><p>${esc(c.body)}</p>${ME&&(c.user_id===ME.id||canManage(v))?`<button class="btn ghost" style="padding:4px 12px;margin:0" data-act="delc" data-id="${c.id}">Delete</button>`:""}</div>`).join("")}`}
-const refreshC=async()=>{const el=$("#cmts");if(el&&CUR)el.innerHTML=await commentsH(CUR)};
-
-/* ---------- Views ---------- */
-const VIEWS={
-  async home(){const L=await listPublic(),m=await sign(L.map(v=>v.thumbnail_path));
-    return`<section class="hero"><h1>Watch what everyone shares.</h1><p>Every public video here is stored in the cloud and visible on any device.</p><a class="btn" href="#/upload">Upload a video</a></section><h2>Latest videos</h2>${grid(L,m,"No public videos yet. Be the first to upload one.")}`},
-  async search(q){const L=await listPublic(q),m=await sign(L.map(v=>v.thumbnail_path));
-    return`<h1>Search</h1><form class="sf" data-act="search"><input id="q" type="search" placeholder="Titles and descriptions" value="${esc(q)}"><button class="btn" style="margin:0">Search</button></form>${grid(L,m,q?`No videos match "${esc(q)}".`:"No public videos yet.")}`},
-  async upload(){return ME?`<h1>Upload a video</h1><p class="mut">Files go to VYDE cloud storage. You must stay signed in until it finishes.</p><div class="panel" id="ub">${uploadH()}</div>`:needAuth("upload")},
-  async my(){if(!ME)return needAuth("see your videos");
-    const{data:L,error}=await sb.from("videos").select(SEL).eq("owner_id",ME.id).order("created_at",{ascending:false});if(error)throw error;
-    const m=await sign(L.map(v=>v.thumbnail_path));
-    return`<h1>My videos</h1>`+(L.length?L.map(v=>`<div class="row"><div class="th">${m[v.thumbnail_path]?`<img src="${m[v.thumbnail_path]}" alt="">`:"No preview"}</div><div><h3>${esc(v.title)}</h3><p class="mut">${esc(v.filename)}, ${fmtB(v.size)}</p><span class="badge ${v.status==="ready"?"ok":"bad"}">${v.status==="ready"?(v.visibility==="public"?"Published":"Private"):v.status==="failed"?"Failed":"Incomplete upload ("+v.status+")"}</span><div>${v.status==="ready"?actions(v):`<button class="btn danger" data-act="del" data-id="${v.id}">Delete</button>`}</div></div></div>`).join(""):`<div class="empty"><p class="mut">You haven't uploaded anything.</p><a class="btn" href="#/upload">Upload a video</a></div>`)},
-  async watch(id){
-    const{data:v,error}=await sb.from("videos").select(SEL).eq("id",id).maybeSingle();if(error)throw error;if(!v)return notFound();
-    let body;
-    if(v.status!=="ready")body=`<div class="unavail"><div><h3>Video file is unavailable.</h3><p>This upload is not finished (${esc(v.status)}).</p></div></div>`;
-    else{const key=v.playback_path||v.original_path,m=await sign([key,v.thumbnail_path],21600);
-      body=m[key]?`<div class="player"><video controls playsinline preload="metadata" src="${m[key]}" ${m[v.thumbnail_path]?`poster="${m[v.thumbnail_path]}"`:""} onloadedmetadata="if(this.duration===Infinity){this.currentTime=1e101;this.ontimeupdate=()=>{this.ontimeupdate=null;this.currentTime=0}}" onerror="vidErr(this)"></video></div>`:`<div class="unavail"><div><h3>Video file is unavailable.</h3><p>The file could not be loaded from storage.</p></div></div>`}
-    CUR=v;const cm=`<section id="cmts">${await commentsH(v)}</section>`;
-    return`${body}<h1 style="margin-top:18px">${esc(v.title)}</h1><p><a class="badge" href="#/profile/${v.owner_id}">${esc(v.profiles?.username||"Unknown")}</a> <span class="badge">${esc(v.category||"")}</span> ${v.visibility==="private"?`<span class="badge bad">Private</span>`:""}</p><p>${esc(v.description)}</p>${(v.tags||[]).length?`<p class="mut">Tags: ${esc(v.tags.join(", "))}</p>`:""}
-    <dl><dt>Duration</dt><dd>${fmtD(v.duration)}</dd><dt>Resolution</dt><dd>${v.width}×${v.height}</dd><dt>Uploaded</dt><dd>${new Date(v.created_at).toLocaleString()}</dd>${canManage(v)?`<dt>Original</dt><dd>${esc(v.filename)}, ${fmtB(v.size)}</dd><dt>Playback</dt><dd>${v.playback_path?"Compressed web version":"Original file"}</dd>`:""}</dl><div>${canManage(v)?actions(v):""}</div>${cm}`},
-  async edit(id){if(!ME)return needAuth("edit");const{data:v,error}=await sb.from("videos").select("*").eq("id",id).maybeSingle();if(error)throw error;if(!v||!canManage(v))return notFound();
-    return`<h1>Edit video</h1><div class="panel">${formH(v)}<button class="btn" data-act="edit" data-id="${id}">Save changes</button><a class="btn ghost" href="#/watch/${id}">Cancel</a></div>`},
-  async profile(id){id=id||(ME&&ME.id);if(!id)return needAuth("see your profile");
-    const{data:p,error}=await sb.from("profiles").select("*").eq("id",id).maybeSingle();if(error)throw error;if(!p)return`<div class="empty"><h2>Profile not found</h2></div>`;
-    const{data:L,error:e2}=await sb.from("videos").select(SEL).eq("owner_id",id).eq("status","ready").eq("visibility","public").order("created_at",{ascending:false});if(e2)throw e2;const m=await sign(L.map(v=>v.thumbnail_path));
-    return`<div style="display:flex;gap:16px;align-items:center"><div class="av">${esc(p.username[0]||"?")}</div><div><h1>${esc(p.username)}</h1><p class="mut">${L.length} public video${L.length===1?"":"s"}</p></div></div><h2>Videos</h2>${grid(L,m,"No public videos yet.")}`},
-  async auth(){if(ME)return`<div class="empty"><h2>You're signed in</h2><a class="btn" href="#/home">Go Home</a></div>`;const up=AUTHMODE==="up";
-    return`<h1>${up?"Create your account":"Sign in"}</h1><form class="form" data-act="auth">${up?`<label>Username<input id="a-name" required maxlength="30"></label>`:""}<label>Email<input id="a-email" type="email" required autocomplete="email"></label><label>Password<input id="a-pass" type="password" required minlength="6" autocomplete="${up?"new-password":"current-password"}"></label><div><button class="btn">${up?"Create account":"Sign in"}</button><button type="button" class="btn ghost" data-act="mode">${up?"I already have an account":"Create an account"}</button></div></form>`}
+const nf=n=>n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"K":""+n;
+const fd=s=>{s=Math.round(s);const h=s/3600|0,m=(s%3600)/60|0,x=s%60;return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(x).padStart(2,"0")};
+const ago=d=>{const n=Math.max(0,(Date.now()-d)/864e5|0);return n<1?"today":n<30?n+"d ago":n<365?(n/30|0)+"mo ago":(n/365|0)+"y ago"};
+const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{toast.error("Storage is full")}}};
+const I={play:'<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>',pause:'<svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>',
+home:'<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>',film:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>',
+fire:'<svg viewBox="0 0 24 24"><path d="M12 3c1 4 6 6 6 11a6 6 0 01-12 0c0-3 2-4 3-6 1 1 1 2 2 2 1-2 1-4 1-7z"/></svg>',star:'<svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6-5.4-3-5.4 3 1.1-6L3.2 9.4l6.1-.8z"/></svg>',
+grid:'<svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg>',
+doc:'<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6zM9 12h7M9 16h7"/></svg>',clock:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+bm:'<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',heart:'<svg viewBox="0 0 24 24"><path d="M12 20s-8-5-8-11a4.5 4.5 0 018-2.5A4.5 4.5 0 0120 9c0 6-8 11-8 11z"/></svg>',
+up:'<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>',plus:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',
+search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>',menu:'<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',bell:'<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4zM10 21h4"/></svg>',
+sun:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M19 5l-1 1M6 18l-1 1"/></svg>',
+full:'<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',more:'<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>',
+shield:'<svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z"/></svg>',
+logo:'<svg viewBox="0 0 32 32"><path d="M16 3l11 6H5z"/><circle cx="16" cy="20" r="8"/></svg>'};
+const toast=Object.fromEntries(["success","error","warning","info"].map(k=>[k,m=>{const e=document.createElement("div");e.className="toast "+k;e.textContent=m;$("#toasts").append(e);setTimeout(()=>e.remove(),3500)}]));
+const modal={open(h){const m=$("#modal");m.innerHTML='<div class="box">'+h+"</div>";m.classList.add("on");const f=$("input,button",m);f&&f.focus()},close(){$("#modal").classList.remove("on");$("#modal").innerHTML=""}};
+/* ================= SEED DATA ================= */
+const rnd=(s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296})(11);
+const pick=a=>a[rnd()*a.length|0],ri=(a,b)=>a+(rnd()*(b-a+1)|0);
+const CATS=["Film","Music","Documentary","Design","Travel","Technology","Food","Sport","Art","Science","Gaming","Learning"];
+const TAGS="cinema,ambient,studio,city,night,craft,interview,analog,minimal,travel,coffee,code,future,nature,sound,light,portrait,story,street,architecture,modular,retro,slow,essay,behind-the-scenes,tutorial,short,live,mountain,ocean,typography,motion,color,archive,workshop,indie,review,remix,field,daily".split(",");
+const seed=()=>{
+  const N="Amir,Lena,Kian,Sofia,Daria,Noah,Yara,Milan,Nora,Felix,Sara,Omid,Iris,Leo,Mina,Arash,Elena,Kai,Ava,Reza".split(",");
+  const users=N.map((n,i)=>({id:"u"+i,n:n+" "+pick(["Vale","Arden","Rahimi","Noor","Hale","Sato"]),h:n.toLowerCase()+i,bio:"Independent maker sharing "+pick(CATS).toLowerCase()+" work on VYDE.",hue:ri(15,45),fol:0,joined:Date.now()-ri(60,900)*864e5,role:i?"user":"admin"}));
+  return{ver:2,users,videos:[],articles:[],comments:[],categories:CATS,tags:TAGS,reports:[]};
 };
-window.vidErr=el=>{const d=document.createElement("div");d.className="unavail";d.textContent="This browser can't play this file. If you own it, download the original to open it elsewhere.";el.replaceWith(d)};
-
-/* ---------- Router ---------- */
-let RT=0;const go=h=>location.hash===h?render():location.hash=h;
-async function render(){
-  const my=++RT,[route,arg]=(location.hash.slice(2)||"home").split("/"),r=VIEWS[route]?route:"home";
-  if(!READY_CFG){$("#app").innerHTML=shell(r,(typeof supabase==="undefined"?`<div class="msg err" role="alert">The Supabase client library did not load from the CDN. Check your connection or content blocker.</div>`:"")+`<div class="panel"><h2 style="margin-top:0">Supabase is not configured</h2><p>Open <b>index.html</b>, set <b>SUPABASE_URL</b> and <b>SUPABASE_ANON_KEY</b> at the top of the script, and run the SQL from the comment at the top of the file in your Supabase SQL Editor. Until then VYDE has no backend, so it shows no videos and accepts no uploads.</p></div>`);return}
-  if(r!=="upload"&&U.s!=="UPLOADING"&&U.s!=="PROCESSING")resetU();
-  const mn=$("main");if(mn)mn.innerHTML=`<div class="acct">${acct()}</div>${loadingH}`;else $("#app").innerHTML=shell(r,loadingH);
-  let html;try{html=await VIEWS[r](decodeURIComponent(arg||""))}catch(e){html=`<div class="msg err" role="alert">${esc(errMsg(e))}</div><button class="btn" data-act="reload">Retry</button>`}
-  if(my!==RT)return;$("#app").innerHTML=shell(r,html);window.scrollTo(0,0)}
-addEventListener("hashchange",render);
-
-/* ---------- Events ---------- */
-async function busy(b,txt,fn){const t=b.textContent;b.disabled=true;b.textContent=txt;try{await fn()}catch(e){toast(errMsg(e),1)}finally{b.disabled=false;b.textContent=t}}
-document.addEventListener("click",async e=>{
-  const b=e.target.closest("[data-act]");if(!b||b.tagName==="FORM")return;const id=b.dataset.id;
-  switch(b.dataset.act){
-    case"save":{const cmp=$("#f-cmp");U.form=readForm();U.compress=!!(cmp&&cmp.checked);U.skip=false;return run()}
-    case"retry":return run();
-    case"abort":return U.xhr&&U.xhr.abort();
-    case"skip":U.skip=true;return U.abortT&&U.abortT();
-    case"cancel":case"again":return resetU(),ru();
-    case"discard":return busy(b,"Removing…",async()=>{if(U.d&&U.d.row)await destroy(U.d.id);resetU();ru();toast("Partial upload removed.")});
-    case"dl":return busy(b,"Preparing…",async()=>{const{data:v,error}=await sb.from("videos").select("original_path,filename").eq("id",id).single();if(error)throw error;
-      const{data,error:e2}=await sb.storage.from(BUCKET).createSignedUrl(v.original_path,120,{download:v.filename});if(e2)throw e2;
-      const a=document.createElement("a");a.href=data.signedUrl;a.download=v.filename;document.body.appendChild(a);a.click();a.remove()});
-    case"del":{if(!confirm("Permanently delete this video, its original file, playback version, thumbnail and comments? This cannot be undone."))return;
-      return busy(b,"Deleting…",async()=>{await destroy(id);if(U.rec&&U.rec.id===id)resetU();toast("Video deleted permanently.");go("#/my")})}
-    case"edit":return busy(b,"Saving…",async()=>{const{error}=await sb.from("videos").update({...readForm(),updated_at:new Date().toISOString()}).eq("id",id);if(error)throw error;toast("Changes saved.");go("#/watch/"+id)});
-    case"delc":return busy(b,"Deleting…",async()=>{const{error}=await sb.from("comments").delete().eq("id",id);if(error)throw error;await refreshC()});
-    case"mode":AUTHMODE=AUTHMODE==="up"?"in":"up";return render();
-    case"signout":await sb.auth.signOut();return;
-    case"reload":return render();
-  }});
-document.addEventListener("submit",async e=>{
-  const a=e.target.dataset.act;if(!a)return;e.preventDefault();const btn=e.target.querySelector("button:not([type=button])");
-  if(a==="search")return go("#/search/"+encodeURIComponent($("#q").value));
-  if(a==="comment")return busy(btn,"Posting…",async()=>{const{error}=await sb.from("comments").insert({video_id:e.target.dataset.id,body:$("#cb").value.trim()});if(error)throw error;await refreshC()});
-  if(a==="auth")return busy(btn,"Please wait…",async()=>{const email=$("#a-email").value.trim(),password=$("#a-pass").value;
-    if(AUTHMODE==="up"){const{data,error}=await sb.auth.signUp({email,password,options:{data:{username:$("#a-name").value.trim()}}});if(error)throw error;
-      if(!data.session){toast("Check your email to confirm your account, then sign in.");AUTHMODE="in";return render()}}
-    else{const{error}=await sb.auth.signInWithPassword({email,password});if(error)throw error}
-    go("#/home")})});
-document.addEventListener("change",e=>{if(e.target.id==="file"&&e.target.files[0])pick(e.target.files[0])});
-const dz=e=>e.target.closest&&e.target.closest("#drop");
-document.addEventListener("dragover",e=>{const d=dz(e);if(d){e.preventDefault();d.classList.add("over")}});
-document.addEventListener("dragleave",e=>{const d=dz(e);if(d)d.classList.remove("over")});
-document.addEventListener("drop",e=>{const d=dz(e);if(d){e.preventDefault();if(e.dataTransfer.files[0])pick(e.dataTransfer.files[0])}});
-addEventListener("beforeunload",e=>{if(U.s==="UPLOADING"||U.s==="PROCESSING"){e.preventDefault();e.returnValue=""}});
-
-/* ---------- Boot ---------- */
-(async()=>{
-  if(READY_CFG){
-    try{const{data}=await sb.auth.getSession();ME=data.session?data.session.user:null;ensureProfile()}catch{}
-    sb.auth.onAuthStateChange((_ev,s)=>{const n=s?s.user:null;if((n&&n.id)!==(ME&&ME.id)){ME=n;setTimeout(ensureProfile,0);render()}else ME=n});
-  }
-  render();
-})();
+/* ================= STORAGE (IndexedDB blobs) ================= */
+const IDB={
+ db:null,
+ open(){return this.db||(this.db=new Promise((ok,no)=>{const r=indexedDB.open("vyde",2);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains("blobs"))r.result.createObjectStore("blobs")};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}))},
+ async put(k,v){try{const d=await this.open();return new Promise(ok=>{const t=d.transaction("blobs","readwrite");t.objectStore("blobs").put(v,k);t.oncomplete=()=>ok(true);t.onerror=()=>ok(false)})}catch{return false}},
+ async get(k){try{const d=await this.open();return new Promise(ok=>{const q=d.transaction("blobs").objectStore("blobs").get(k);q.onsuccess=()=>ok(q.result||null);q.onerror=()=>ok(null)})}catch{return null}},
+ async del(k){try{const d=await this.open();return new Promise(ok=>{const t=d.transaction("blobs","readwrite");t.objectStore("blobs").delete(k);t.oncomplete=()=>ok(true);t.onerror=()=>ok(false)})}catch{return false}},
+ async clear(){try{const d=await this.open();return new Promise(ok=>{const t=d.transaction("blobs","readwrite");t.objectStore("blobs").clear();t.oncomplete=()=>ok(true);t.onerror=()=>ok(false)})}catch{return false}},
+ async estimate(){try{return navigator.storage?.estimate?await navigator.storage.estimate():null}catch{return null}},
+ async requestPersistence(){try{return navigator.storage?.persist?await navigator.storage.persist():false}catch{return false}}
+};
+/* ================= BACKEND ADAPTER (LocalBackendAdapter) ================= */
+let DB=LS.get("vyde.db",null);
+if(!DB){DB=seed();LS.set("vyde.db",DB)}
+else if(DB.ver===1){
+  DB.videos=(DB.videos||[]).filter(v=>!!v.blob);
+  DB.comments=(DB.comments||[]).filter(c=>(DB.videos||[]).some(v=>v.id===c.tg)||(DB.articles||[]).some(a=>a.id===c.tg));
+  DB.ver=2;LS.set("vyde.db",DB)
+}
+if(DB.ver!==2){DB=seed();LS.set("vyde.db",DB)}
+const save=()=>LS.set("vyde.db",DB);
+const ME0={bm:[],ba:[],liked:[],hist:{},follow:[],search:[]};let ME=Object.assign({},ME0,LS.get("vyde.me",{}));const saveMe=()=>LS.set("vyde.me",ME);
+ME.bm=(ME.bm||[]).filter(id=>DB.videos.some(v=>v.id===id));ME.liked=(ME.liked||[]).filter(id=>DB.videos.some(v=>v.id===id));
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+const kdf=async(pw,salt)=>{const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);return hex(await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:150000,hash:"SHA-256"},k,256))};
+const LocalBackendAdapter={mode:"local",
+ auth:{cred:()=>LS.get("vyde.cred",{}),
+  session(){const s=LS.get("vyde.session",null);return s&&DB.users.find(u=>u.id===s)||null},
+  async register(name,email,pw){if(!crypto?.subtle)throw Error("Secure context required");if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))throw Error("Enter a valid email");if(pw.length<8||!/\d/.test(pw)||!/[a-zA-Z]/.test(pw))throw Error("Password needs 8+ characters with letters and numbers");if(name.trim().length<2)throw Error("Enter your name");
+   const c=this.cred();if(c[email.toLowerCase()])throw Error("This email is already registered");const salt=crypto.getRandomValues(new Uint8Array(16));
+   const u={id:"u"+Date.now(),n:name.trim(),h:name.trim().toLowerCase().replace(/[^a-z0-9]/g,"")+ri(10,99),bio:"New on VYDE.",hue:30,fol:0,joined:Date.now(),role:"user"};DB.users.push(u);save();
+   c[email.toLowerCase()]={id:u.id,salt:hex(salt),hash:await kdf(pw,salt)};LS.set("vyde.cred",c);LS.set("vyde.session",u.id);return u},
+  async login(email,pw){const r=this.cred()[email.toLowerCase()];if(!r)throw Error("Email or password is wrong");const salt=new Uint8Array(r.salt.match(/../g).map(h=>parseInt(h,16)));if(await kdf(pw,salt)!==r.hash)throw Error("Email or password is wrong");LS.set("vyde.session",r.id);return DB.users.find(u=>u.id===r.id)},
+  logout(){localStorage.removeItem("vyde.session")}},
+ users:{list:()=>DB.users,get:i=>DB.users.find(u=>u.id===i||u.h===i)||{id:"x",n:"Unknown",h:"unknown",hue:30,fol:0,bio:"",joined:Date.now()},remove(i){DB.users=DB.users.filter(u=>u.id!==i);save()}},
+ videos:{list:()=>DB.videos.filter(v=>v.vis!=="private"||v.u===(LocalBackendAdapter.auth.session()||{}).id),get:i=>DB.videos.find(v=>v.id===i),add(v){DB.videos.unshift(v);save()},remove(i){DB.videos=DB.videos.filter(v=>v.id!==i);save()},update(i,p){Object.assign(DB.videos.find(v=>v.id===i)||{},p);save()}},
+ articles:{list:()=>DB.articles,get:i=>DB.articles.find(a=>a.id===i),add(a){DB.articles.unshift(a);save()},remove(i){DB.articles=DB.articles.filter(a=>a.id!==i);save()}},
+ comments:{list:t=>DB.comments.filter(c=>c.tg===t),add(c){DB.comments.push(c);save()},remove(i){DB.comments=DB.comments.filter(c=>c.id!==i&&c.p!==i);save()},like(i){const c=DB.comments.find(c=>c.id===i);if(c){c.likes++;save()}}},
+ uploads:{
+  async putOriginal(id,f){return IDB.put("original:"+id,f)},
+  async putPlayable(id,f){return IDB.put("playable:"+id,f)},
+  async getOriginal(id){return (await IDB.get("original:"+id))||await IDB.get(id)},
+  async getPlayable(id){return (await IDB.get("playable:"+id))||await IDB.get("original:"+id)||await IDB.get(id)},
+  async deleteAll(id){await IDB.del("original:"+id);await IDB.del("playable:"+id);await IDB.del(id)},
+  async putBlob(id,f){return this.putOriginal(id,f)},
+  async getBlob(id){return this.getPlayable(id)}
+}};
+window.AppBackend=LocalBackendAdapter;const BE=window.AppBackend;
+const U=i=>BE.users.get(i),me=()=>BE.auth.session();
+/* ================= SEARCH ENGINE ================= */
+const Search={run(q,type="all",sort="rel",dur="any"){q=q.toLowerCase().trim();const sc=(t,x)=>{if(!q)return 1;let s=0;const T=(t||"").toLowerCase();if(T===q)s+=100;else if(T.includes(q))s+=60;if(x.tags&&x.tags.some(g=>g.includes(q)))s+=30;if((x.c||"").toLowerCase().includes(q))s+=25;if(U(x.u).n.toLowerCase().includes(q))s+=30;if((x.desc||"").toLowerCase().includes(q))s+=10;return s};
+ let r=[];if(type!=="article")r.push(...BE.videos.list().map(x=>({k:"v",x,s:sc(x.t,x)})));if(type!=="video")r.push(...BE.articles.list().map(x=>({k:"a",x,s:sc(x.t,x)})));
+ r=r.filter(o=>o.s>0);if(dur==="short")r=r.filter(o=>o.k==="v"&&o.x.dur<300);if(dur==="long")r=r.filter(o=>o.k==="v"&&o.x.dur>1200);
+ const by={new:o=>o.x.d,views:o=>o.x.views,likes:o=>o.x.likes||0,rel:o=>o.s};return r.sort((a,b)=>by[sort](b)-by[sort](a))}};
+/* ================= COMPONENTS ================= */
+const hue=(h,s=35,l=18)=>`hsl(${h},${s}%,${l}%)`;
+const thumb=(h,k)=>{const a=(k+"").length*37%60;return"data:image/svg+xml,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${hue(h,38,14)}"/><stop offset="1" stop-color="${hue(h+18,45,34)}"/></linearGradient></defs><rect width="320" height="180" fill="url(#g)"/><circle cx="${100+a*2}" cy="90" r="${40+a/2}" fill="none" stroke="#f3ece2" stroke-opacity=".25" stroke-width="2"/><path d="M${160+a} 30l50 44h-100z" fill="#f3ece2" fill-opacity=".12"/></svg>`)};
+const avatar=u=>`<a class="av" href="#/profile/${esc(u.h)}" aria-label="${esc(u.n)}" style="background:${hue(u.hue,30,38)}">${esc(u.n[0])}</a>`;
+const vcard=v=>{const u=U(v.u),owner=me()?.id===v.u;return`<article class="card"><a class="th" href="#/watch/${v.id}"><img alt="" loading="lazy" src="${v.th||thumb(v.hue,v.id)}"><span class="dur">${fd(v.dur)}</span><span class="pl">${I.play}</span></a><div class="meta">${avatar(u)}<div><a class="tt" href="#/watch/${v.id}">${esc(v.t)}</a><div class="sub">${esc(u.n)}</div><div class="sub">${nf(v.views)} views, ${ago(v.d)}</div></div><div class="minirow"><button class="ic" data-act="save" data-id="${v.id}" aria-label="Save video">${I.bm}</button>${owner?`<button class="ic" data-act="vtools" data-id="${v.id}" aria-label="Video actions">${I.more}</button>`:""}</div></div></article>`};
+const acard=a=>`<a class="acard" href="#/article/${a.id}"><img alt="" src="${thumb(a.hue,a.id)}"><div><div class="sub">${esc(a.c)}</div><div class="tt">${esc(a.t)}</div><div class="sub">${esc(U(a.u).n)}, ${Math.max(2,a.body.length/90|0)} min read, ${ago(a.d)}</div></div></a>`;
+const ccard=u=>`<a class="ccard" href="#/profile/${esc(u.h)}"><span class="av" style="background:${hue(u.hue,30,38)}">${esc(u.n[0])}</span><b>${esc(u.n)}</b><span class="sub">${nf(u.fol)} followers</span></a>`;
+const empty=(t,s,cta)=>`<div class="empty"><h2 style="justify-content:center">${t}</h2><p>${s}</p>${cta||""}</div>`;
+const sect=(t,l,h)=>`<h2>${t}${l?`<a href="${l}">See all</a>`:""}</h2>${h}`;
+const grid=a=>a.length?`<div class="grid">${a.map(vcard).join("")}</div>`:empty("Nothing here yet","Content you add will show up here.");
+const chips=(cur)=>`<div class="chips">${CATS.map(c=>`<a class="chip ${c===cur?"on":""}" href="#/search/${encodeURIComponent(c)}">${c}</a>`).join("")}</div>`;
+/* ================= VIDEO PLAYER ================= */
+class VideoPlayer{
+ constructor(root,dur,src,start,onProg){this.r=root;this.dur=dur;this.t=start||0;this.rate=1;this.on=onProg;this.playing=false;this.v=null;
+  if(src){this.v=document.createElement("video");this.v.src=src;this.v.playsInline=true;this.v.className="media";$(".stage",root).prepend(this.v);
+   this.v.onloadedmetadata=()=>{this.dur=this.v.duration;this.v.currentTime=this.t;this.ui()};this.v.ontimeupdate=()=>{this.t=this.v.currentTime;this.ui()};this.v.onended=()=>{this.pause();this.onEnd&&this.onEnd()}}
+  this.bind();this.ui()}
+ play(){if(!this.v){toast.error("No playable video file is stored for this upload.");return}this.playing=true;this.v.play().catch(()=>{this.playing=false;toast.error("This video cannot be played in this browser.")});this.ui()}
+ pause(){this.playing=false;if(this.v)this.v.pause();clearInterval(this.iv);this.ui()}
+ toggle(){this.playing?this.pause():this.play()}
+ seek(x){this.t=Math.max(0,Math.min(this.dur,x));if(this.v)this.v.currentTime=this.t;this.ui()}
+ setVolume(x){this.vol=x;if(this.v)this.v.volume=x;this.muted=x===0}
+ setPlaybackRate(x){this.rate=x;if(this.v)this.v.playbackRate=x}
+ setQuality(q){toast.info("Quality set to "+q)}
+ toggleFullscreen(){document.fullscreenElement?document.exitFullscreen():this.r.requestFullscreen&&this.r.requestFullscreen()}
+ togglePiP(){if(this.v&&document.pictureInPictureEnabled){document.pictureInPictureElement?document.exitPictureInPicture():this.v.requestPictureInPicture().catch(()=>{})}else toast.info("Picture-in-picture works with uploaded videos")}
+ ui(){const q=s=>$(s,this.r);q("[data-p=pp]").innerHTML=this.playing?I.pause:I.play;q("[data-p=seek]").max=this.dur||1;q("[data-p=seek]").value=this.t;q("[data-p=time]").textContent=fd(this.t)+" / "+fd(this.dur);this.on&&this.on(this.t,this.dur)}
+ bind(){const q=s=>$(s,this.r);q("[data-p=pp]").onclick=()=>this.toggle();q(".stage").onclick=()=>this.toggle();q("[data-p=seek]").oninput=e=>this.seek(+e.target.value);q("[data-p=vol]").oninput=e=>this.setVolume(+e.target.value);
+  q("[data-p=rate]").onchange=e=>this.setPlaybackRate(+e.target.value);q("[data-p=q]").onchange=e=>this.setQuality(e.target.value);q("[data-p=fs]").onclick=()=>this.toggleFullscreen();q("[data-p=pip]").onclick=()=>this.togglePiP();q("[data-p=th]").onclick=()=>document.body.classList.toggle("theater");
+  this.key=e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)&&e.target.type!=="range"||e.target.isContentEditable)return;const k=e.key.toLowerCase();
+   if(k===" "||k==="k"){e.preventDefault();this.toggle()}else if(e.key==="ArrowLeft"){this.seek(this.t-5)}else if(e.key==="ArrowRight"){this.seek(this.t+5)}else if(k==="m"){const m=q("[data-p=vol]");this.setVolume(this.muted?1:0);m.value=this.muted?0:1}else if(k==="f")this.toggleFullscreen();else if(k==="t")document.body.classList.toggle("theater")};
+  document.addEventListener("keydown",this.key)}
+ destroy(){this.pause();document.removeEventListener("keydown",this.key);if(this.v){this.v.removeAttribute("src");this.v.load()}}}
+const playerHtml=v=>`<div class="player" tabindex="0" aria-label="Video player"><div class="stage" style="background-image:url('${v.th||thumb(v.hue,v.id)}')"><span class="pl" style="opacity:1;background:none">${I.play}</span></div><div class="bar"><input type="range" data-p="seek" min="0" step="0.1" aria-label="Seek"><div class="row"><button class="ic" data-p="pp" aria-label="Play or pause"></button><span data-p="time"></span><span style="flex:1"></span><input class="vol" type="range" data-p="vol" min="0" max="1" step=".05" value="1" aria-label="Volume"><select data-p="rate" aria-label="Speed">${[.5,1,1.25,1.5,2].map(r=>`<option ${r===1?"selected":""} value="${r}">${r}x</option>`).join("")}</select><select data-p="q" aria-label="Quality"><option>1080p</option><option>720p</option><option>480p</option></select><button class="ic" data-p="th" aria-label="Theater mode"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10"/></svg></button><button class="ic" data-p="pip" aria-label="Picture in picture"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="12" width="7" height="5"/></svg></button><button class="ic" data-p="fs" aria-label="Fullscreen">${I.full}</button></div></div></div>`;
+/* ================= UPLOAD MANAGER — REAL LOCAL UPLOAD + BROWSER COMPRESSION ================= */
+class UploadManager{
+ constructor(){this.items=new Map()}
+ validateFile(f){
+  if(!f)return"No file selected";
+  const ext=(f.name.split(".").pop()||"").toLowerCase();
+  if(!["mp4","webm","mov","m4v","ogv","avi","mkv"].includes(ext))return"Unsupported extension. Use MP4, WebM, MOV, M4V, OGV, AVI or MKV.";
+  if(!f.size)return"File is empty";
+  if(f.size>1024*1024*1024)return"File is larger than 1 GB in GitHub-only mode.";
+  if([...this.items.values()].some(u=>u.file.name===f.name&&u.file.size===f.size))return"This file was already added";
+  return null
+ }
+ async inspect(f){
+  const url=URL.createObjectURL(f),info={dur:0,w:0,h:0,th:null,bitrate:0};
+  try{
+   await new Promise((ok,no)=>{
+    const v=document.createElement("video");v.preload="metadata";v.src=url;let done=false;
+    const finish=(fn)=>{if(done)return;done=true;clearTimeout(tm);try{v.remove()}catch{};fn()};
+    const tm=setTimeout(()=>finish(()=>no(Error("The browser could not read this video's metadata."))),10000);
+    v.onerror=()=>finish(()=>no(Error("The selected video could not be decoded by this browser.")));
+    v.onloadedmetadata=()=>{info.dur=Number.isFinite(v.duration)?v.duration:0;info.w=v.videoWidth||0;info.h=v.videoHeight||0;info.bitrate=info.dur?Math.round(f.size*8/info.dur/1000):0;v.currentTime=Math.min(1,Math.max(.1,(info.dur||1)/3))};
+    v.onseeked=()=>{try{const c=document.createElement("canvas");c.width=480;c.height=270;c.getContext("2d").drawImage(v,0,0,480,270);info.th=c.toDataURL("image/jpeg",.76)}catch{}finish(()=>ok())};
+   });
+  }finally{URL.revokeObjectURL(url)}
+  return info
+ }
+ async createUpload(f){
+  const err=this.validateFile(f);if(err)throw Error(err);
+  const id="v"+Date.now()+"_"+Math.random().toString(36).slice(2,8),info=await this.inspect(f);
+  const u={id,file:f,info,state:"selected",p:0,encodeP:0,compression:null,playable:null,error:null};
+  this.items.set(id,u);return u
+ }
+ static recorderType(){
+  if(!window.MediaRecorder)return null;
+  const types=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4"];
+  return types.find(x=>MediaRecorder.isTypeSupported(x))||null
+ }
+ async optimize(id,onProgress=()=>{}){
+  const u=this.items.get(id);if(!u)throw Error("Upload session not found");
+  if(u.file.size<=8*1024*1024){u.playable=u.file;u.compression={mode:"passthrough",original:u.file.size,playable:u.file.size,saved:0,savedPct:0};onProgress(100,"File is already small; keeping original playback.");return u.file}
+  const mime=UploadManager.recorderType();
+  if(!mime){u.playable=u.file;u.compression={mode:"unsupported",original:u.file.size,playable:u.file.size,saved:0,savedPct:0};onProgress(100,"Browser compression is unavailable; original will be used for playback.");return u.file}
+  const sourceUrl=URL.createObjectURL(u.file);
+  let video=null,ac=null,rec=null,canvas=null,raf=0,stopped=false,stream=null;
+  const stop=st=>{try{st?.getTracks().forEach(t=>t.stop())}catch{}};
+  try{
+   video=document.createElement("video");video.src=sourceUrl;video.preload="auto";video.playsInline=true;
+   await new Promise((ok,no)=>{let done=false;const tm=setTimeout(()=>{if(!done){done=true;no(Error("Video loading timed out during optimization."))}},20000);video.onloadeddata=()=>{if(!done){done=true;clearTimeout(tm);ok()}};video.onerror=()=>{if(!done){done=true;clearTimeout(tm);no(Error("Browser could not decode this video for optimization."))}}});
+   const srcW=video.videoWidth||u.info.w||1280,srcH=video.videoHeight||u.info.h||720,scale=Math.min(1,1280/srcW,720/srcH),w=Math.max(2,Math.round(srcW*scale/2)*2),h=Math.max(2,Math.round(srcH*scale/2)*2);
+   canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d",{alpha:false});
+   const videoStream=canvas.captureStream?canvas.captureStream(30):null;if(!videoStream)throw Error("This browser cannot capture a canvas stream.");
+   const tracks=[...videoStream.getVideoTracks()];
+   if(window.AudioContext||window.webkitAudioContext){
+    const AC=window.AudioContext||window.webkitAudioContext;ac=new AC();
+    const srcNode=ac.createMediaElementSource(video),dest=ac.createMediaStreamDestination(),silent=ac.createGain();silent.gain.value=0;
+    srcNode.connect(dest);srcNode.connect(silent);silent.connect(ac.destination);tracks.push(...dest.stream.getAudioTracks());try{await ac.resume()}catch{}
+   }
+   stream=new MediaStream(tracks);
+   rec=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:Math.min(3500000,Math.max(900000,w*h>=921600?2600000:1600000)),audioBitsPerSecond:128000});
+   const chunks=[];rec.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+   const done=new Promise((resolve,reject)=>{rec.onerror=e=>reject(e.error||Error("Video encoding failed."));rec.onstop=()=>resolve(new Blob(chunks,{type:rec.mimeType||mime}))});
+   const duration=u.info.dur||video.duration||1;
+   const paint=()=>{if(stopped)return;try{ctx.drawImage(video,0,0,w,h)}catch{}const pct=Math.min(99,Math.round((video.currentTime/duration)*100));onProgress(pct,`Optimizing video… ${pct}%`);raf=requestAnimationFrame(paint)};
+   video.ontimeupdate=()=>{const pct=Math.min(99,Math.round((video.currentTime/duration)*100));onProgress(pct,`Optimizing video… ${pct}%`)};
+   video.onended=()=>{if(rec&&rec.state!=="inactive")rec.stop()};
+   rec.start(1000);video.currentTime=0;paint();
+   try{await video.play()}catch(e){if(rec.state!=="inactive")rec.stop();throw Error("Browser blocked playback needed for optimization. Try again.")};
+   const out=await done;stopped=true;cancelAnimationFrame(raf);stop(stream);if(ac)try{await ac.close()}catch{}
+   if(!out?.size)throw Error("Compression produced an empty file.");
+   if(out.size>=u.file.size){
+     u.playable=u.file;u.compression={mode:"original-smaller",mime:u.file.type||"",original:u.file.size,playable:u.file.size,saved:0,savedPct:0};
+     onProgress(100,"The optimized copy was not smaller; keeping the original for playback.");return u.file
+   }
+   u.playable=out;u.compression={mode:"browser",mime:out.type,original:u.file.size,playable:out.size,saved:u.file.size-out.size,savedPct:Math.max(0,(1-out.size/u.file.size)*100)};
+   onProgress(100,`Optimization complete · ${(out.size/1048576).toFixed(1)} MB playback file`);return out
+  }catch(e){
+   stopped=true;cancelAnimationFrame(raf);try{if(rec&&rec.state!=="inactive")rec.stop()}catch{};stop(stream);try{if(ac)await ac.close()}catch{}
+   u.playable=u.file;u.compression={mode:"fallback",original:u.file.size,playable:u.file.size,saved:0,savedPct:0,error:e.message};
+   onProgress(100,"Optimization unavailable; keeping the original for playback.");return u.file
+  }finally{URL.revokeObjectURL(sourceUrl)}
+ }
+ cancel(id){this.items.delete(id)}
+}
+const UM=new UploadManager();
+/* ================= ROUTER / STATE ================= */
+const S={player:null,io:null,url:null,cleanup:[]};
+const pages={};const cap={wc:!!window.VideoDecoder,mc:!!navigator.mediaCapabilities};
+const NAV=[["Home","home",I.home],["Videos","videos",I.film],["Trending","trending",I.fire],["New","new",I.star],["Categories","categories",I.grid],["Articles","articles",I.doc],"Library",["History","history",I.clock],["Bookmarks","bookmarks",I.bm],["Liked","liked",I.heart],"Creator",["Upload","upload",I.up],["My Videos","my-videos",I.film],["My Articles","my-articles",I.doc],"System",["Settings","settings",I.gear],["Admin","admin",I.shield]];
+const meta=(t,d)=>{document.title=t?t+" | VYDE":"VYDE";const m=$("meta[name=description]");m&&(m.content=d||"Watch, discover and upload video.");const o=$("meta[property='og:title']");o&&(o.content=document.title)};
+const R=()=>{const h=location.hash.replace(/^#\/?/,""),p=h.split("/");return{name:p[0]||"home",arg:decodeURIComponent(p.slice(1).join("/")||"")}};
+function route(){const{name,arg}=R();S.cleanup.forEach(f=>f());S.cleanup=[];document.body.classList.remove("drawer","theater");if(S.player){S.player.destroy();S.player=null}if(S.url){URL.revokeObjectURL(S.url);S.url=null}
+ const pg=pages[name]||pages.notfound,m=$("#main");m.innerHTML='<div class="grid">'+'<div class="sk"></div>'.repeat(6)+"</div>";
+ try{const out=pg(arg);m.innerHTML=out.html;out.mount&&out.mount()}catch(e){console.error(e);m.innerHTML=empty("Something went wrong",esc(e.message),'<button class="btn" onclick="route()">Try again</button>')}
+ $$("aside a,nav.bn a").forEach(a=>a.classList.toggle("on",a.getAttribute("href")==="#/"+name));window.scrollTo(0,0);m.focus({preventScroll:true})}
+/* ================= COMMENTS ================= */
+const cmHtml=(t,sort="new")=>{const all=BE.comments.list(t),u0=me();const row=(c,d)=>{const u=U(c.u);return`<div class="cm ${d?"rep":""}"><span class="av" style="background:${hue(u.hue,30,38)}">${esc(u.n[0])}</span><div><b>${esc(u.n)}</b> <span class="sub">${ago(c.d)}</span><div>${esc(c.x)}</div><div class="sub"><button data-act="clike" data-id="${c.id}">Like ${c.likes}</button> <button data-act="reply" data-id="${c.id}" data-t="${t}">Reply</button> ${u0&&u0.id===c.u?`<button data-act="cdel" data-id="${c.id}">Delete</button>`:`<button data-act="report" data-id="${c.id}">Report</button>`}</div>${all.filter(r=>r.p===c.id).map(r=>row(r,1)).join("")}</div></div>`};
+ const top=all.filter(c=>!c.p).sort((a,b)=>sort==="top"?b.likes-a.likes:b.d-a.d);
+ return`<h2>${all.length} comments<select class="f" style="width:auto" data-sort="${t}" aria-label="Sort comments"><option value="new" ${sort==="new"?"selected":""}>Newest</option><option value="top" ${sort==="top"?"selected":""}>Top</option></select></h2><div style="display:flex;gap:8px"><input class="f" id="cin" placeholder="Add a comment" maxlength="500" aria-label="Add a comment"><button class="btn p" data-act="cadd" data-t="${t}">Comment</button></div><div id="clist">${top.length?top.map(c=>row(c,0)).join(""):empty("No comments yet","Start the conversation.")}</div>`};
+/* ================= SANITIZER ================= */
+const OK={P:1,H2:1,H3:1,B:1,STRONG:1,I:1,EM:1,BLOCKQUOTE:1,UL:1,OL:1,LI:1,PRE:1,CODE:1,A:1,HR:1,BR:1,IMG:1,DIV:1};
+const sanitize=h=>{const d=new DOMParser().parseFromString("<body>"+h,"text/html").body;const w=n=>{[...n.children].forEach(c=>{if(!OK[c.tagName]){c.replaceWith(document.createTextNode(c.textContent));return}[...c.attributes].forEach(a=>{const ok=(c.tagName==="A"&&a.name==="href"&&/^https?:\/\//i.test(a.value))||(c.tagName==="IMG"&&a.name==="src"&&/^(https:\/\/|data:image\/(png|jpe?g|gif|webp))/i.test(a.value));if(!ok)c.removeAttribute(a.name)});if(c.tagName==="A"){c.rel="noopener noreferrer";c.target="_blank"}w(c)})};w(d);return d.innerHTML};
+/* ================= PAGE RENDERERS ================= */
+const byV=()=>BE.videos.list().slice(),shuffle=a=>a.sort(()=>rnd()-.5);
+pages.home=()=>{
+ const v=byV(),m=me();meta("");
+ const hero=v.length?(()=>{const f=v.slice().sort((a,b)=>b.views-a.views)[0],u=U(f.u);return`<section class="hero"><img alt="" src="${f.th||thumb(f.hue,f.id)}"><div><span class="chip">${esc(f.c)}</span><h1 style="margin-top:12px">${esc(f.t)}</h1><p>${esc(f.desc||"")}</p><p>${esc(u.n)}, ${nf(f.views)} views, ${ago(f.d)}</p><div class="row"><a class="btn p" href="#/watch/${f.id}">${I.play}Watch</a>${m?.id===f.u?`<button class="btn" data-act="save" data-id="${f.id}">${I.bm}Save</button>`:""}</div></div></section>`})():`<section class="hero" style="min-height:340px"><div><span class="chip">VYDE</span><h1 style="margin-top:12px">Your video platform starts here.</h1><p>No fake videos are seeded. Upload a real video from this device; VYDE extracts a thumbnail, creates a smaller playback copy when supported, and keeps the original available for download.</p><div class="row"><a class="btn p" href="#/upload">${I.up}Upload your first video</a><a class="btn" href="#/articles">${I.doc}Explore articles</a></div></div></section>`;
+ return{html:hero+(v.length?sect("Trending","#/trending",grid(v.slice().sort((a,b)=>b.views-a.views).slice(0,8)))+sect("New videos","#/new",grid(v.slice().sort((a,b)=>b.d-a.d).slice(0,8))):`<div class="local-note" style="margin-top:20px">${m?`Signed in as <b>${esc(m.n)}</b>. Your uploaded videos will appear here on this browser.`:"Create or sign into a local account to manage uploads on this browser."}</div>`)+(m?sect("My videos","#/my-videos",grid(v.filter(x=>x.u===m.id).slice(0,8))):"")+sect("Popular creators","",`<div class="grid">${DB.users.slice().sort((a,b)=>b.fol-a.fol).slice(0,6).map(ccard).join("")}</div>`)+sect("Categories","",chips())}
+};
+const listPage=(title,sortf)=>()=>{meta(title);return{html:`<h1>${title}</h1>${chips()}<div class="grid" id="ig" style="margin-top:18px"></div><div id="sent" style="height:40px"></div>`,mount(){const all=sortf(byV());let n=0;const step=()=>{const el=$("#ig");if(!el)return;el.insertAdjacentHTML("beforeend",all.slice(n,n+12).map(vcard).join(""));n+=12;if(n>=all.length&&S.io)S.io.disconnect()};step();S.io=new IntersectionObserver(e=>e[0].isIntersecting&&step(),{rootMargin:"300px"});S.io.observe($("#sent"));S.cleanup.push(()=>S.io&&S.io.disconnect())}}};
+pages.videos=listPage("Videos",a=>a.sort((x,y)=>y.d-x.d));pages.trending=listPage("Trending",a=>a.sort((x,y)=>y.views-x.views));pages.new=listPage("New",a=>a.sort((x,y)=>y.d-x.d));
+pages.categories=()=>({html:`<h1>Categories</h1><div class="grid" style="margin-top:18px">${CATS.map((c,i)=>`<a class="acard" href="#/search/${encodeURIComponent(c)}"><img alt="" src="${thumb(20+i*3,c)}"><div><b>${c}</b><div class="sub">${DB.videos.filter(v=>v.c===c).length} videos</div></div></a>`).join("")}</div>`});
+pages.search=q=>{meta("Search: "+q);return{html:`<h1>${q?"Results for "+esc(q):"Search"}</h1><div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0"><select class="f" style="width:auto" id="ft" aria-label="Content type"><option value="all">All</option><option value="video">Videos</option><option value="article">Articles</option></select><select class="f" style="width:auto" id="fd" aria-label="Duration"><option value="any">Any length</option><option value="short">Under 5 min</option><option value="long">Over 20 min</option></select><select class="f" style="width:auto" id="fs" aria-label="Sort"><option value="rel">Relevant</option><option value="new">Newest</option><option value="views">Most viewed</option><option value="likes">Most liked</option></select></div><div id="res"></div>`,mount(){
+  const go=()=>{const r=Search.run(q,$("#ft").value,$("#fs").value,$("#fd").value),cr=DB.users.filter(u=>q&&u.n.toLowerCase().includes(q.toLowerCase()));$("#res").innerHTML=(cr.length?`<div class="grid">${cr.slice(0,4).map(ccard).join("")}</div>`:"")+(r.length?`<div class="grid" style="margin-top:18px">${r.slice(0,60).map(o=>o.k==="v"?vcard(o.x):acard(o.x)).join("")}</div>`:empty("No results","Try a different word or remove filters."))};
+  ["ft","fd","fs"].forEach(i=>$("#"+i).onchange=go);go();if(q){ME.search=[q,...ME.search.filter(s=>s!==q)].slice(0,8);saveMe()}}}};
+pages.watch=id=>{
+ const v=BE.videos.get(id);if(!v)return{html:empty("Video not found","It may have been removed.",'<a class="btn" href="#/home">Go home</a>')};
+ const u=U(v.u),h=ME.hist[id]||{t:0},liked=ME.liked.includes(id),owner=me()?.id===v.u;meta(v.t,v.desc);
+ return{html:`<div class="watch"><div>${playerHtml(v)}<h1 style="font-size:24px;margin:14px 0 8px">${esc(v.t)}</h1><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${avatar(u)}<div><b>${esc(u.n)}</b><div class="sub">${nf(u.fol)} followers</div></div><button class="btn" data-act="follow" data-id="${u.id}">${ME.follow.includes(u.id)?"Following":"Follow"}</button></div><div class="act"><button class="btn" data-act="like" data-id="${id}">${I.heart}${liked?"Liked":"Like"} ${nf(v.likes+(liked?1:0))}</button><button class="btn" data-act="dislike">Dislike</button><button class="btn" data-act="share" data-id="${id}">Share</button><button class="btn" data-act="save" data-id="${id}">${I.bm}Save</button><button class="btn" data-act="report" data-id="${id}">Report</button>${owner?`<button class="btn" data-act="download-original" data-id="${id}">Download original</button><button class="btn" data-act="download-playable" data-id="${id}">Download playback</button><button class="btn danger" data-act="vdel" data-id="${id}">Delete</button>`:""}</div><div class="box"><b>${nf(v.views)} views, ${ago(v.d)}</b><p style="margin-top:6px">${esc(v.desc||"")}</p><p class="sub">${(v.tags||[]).map(t=>"#"+esc(t)).join(" ")}</p>${v.originalSize?`<p class="sub">Original ${(v.originalSize/1048576).toFixed(1)} MB · Playback ${(v.playableSize/1048576).toFixed(1)} MB</p>`:""}</div><div id="cm">${cmHtml(id)}</div></div><div><h2 style="margin-top:0">Up next</h2><div style="display:grid;gap:16px">${byV().filter(x=>x.id!==id&&x.c===v.c).concat(byV().filter(x=>x.id!==id)).slice(0,8).map(vcard).join("")||empty("No more videos","Upload another video to build the library.")}</div></div></div>`,
+ async mount(){
+   let src=null;const b=await BE.uploads.getPlayable(id);if(b)src=S.url=URL.createObjectURL(b);
+   const p=S.player=new VideoPlayer($(".player"),v.dur,src,h.t,(t,d)=>{if(t>0&&d)ME.hist[id]={t,pct:Math.round(t/d*100),ts:Date.now()}});
+   p.onEnd=()=>{const n=byV().find(x=>x.c===v.c&&x.id!==id);if(n&&LS.get("vyde.auto",true)){toast.info("Playing next video");location.hash="#/watch/"+n.id}};
+   ME.hist[id]=ME.hist[id]||{t:0,pct:0,ts:Date.now()};saveMe();v.views++;save()
+ }
+ }};pages.articles=pages.articles=()=>({html:`<h1>Articles</h1><div class="grid" style="margin-top:18px">${BE.articles.list().map(acard).join("")}</div><p style="margin-top:20px"><a class="btn p" href="#/create-article">Write an article</a></p>`});
+pages.article=id=>{const a=BE.articles.get(id);if(!a)return{html:empty("Article not found","It may have been removed.")};const u=U(a.u);meta(a.t);return{html:`<div class="art"><div style="position:sticky;top:var(--hd);height:3px;background:var(--a);width:0;z-index:5" id="rp"></div><img alt="" style="width:100%;border-radius:var(--r)" src="${thumb(a.hue,a.id)}"><h1 style="margin:18px 0">${esc(a.t)}</h1><div style="display:flex;gap:10px;align-items:center">${avatar(u)}<span>${esc(u.n)}<div class="sub">${ago(a.d)}, ${nf(a.views)} views, ${Math.max(2,a.body.length/90|0)} min read</div></span><button class="btn" style="margin-left:auto" data-act="asave" data-id="${id}">${I.bm}Save</button></div><div class="body">${sanitize(a.body)}</div><p class="sub">${a.tags.map(t=>"#"+esc(t)).join(" ")}</p><div id="cm">${cmHtml(id)}</div>${sect("Related articles","",`<div class="grid">${BE.articles.list().filter(x=>x.id!==id).slice(0,2).map(acard).join("")}</div>`)}</div>`,mount(){const f=()=>{const e=$("#rp");if(e)e.style.width=Math.min(100,scrollY/(document.body.scrollHeight-innerHeight)*100)+"%"};addEventListener("scroll",f,{passive:true});S.cleanup.push(()=>removeEventListener("scroll",f))}}};
+pages["create-article"]=()=>{if(!me())return authGate();return{html:`<div class="art"><h1>Write an article</h1><label for="at">Title</label><input class="f" id="at" maxlength="120"><label>Category</label><select class="f" id="ac">${CATS.map(c=>`<option>${c}</option>`).join("")}</select><div class="act" style="margin-top:14px">${[["Heading","h2","formatBlock"],["Bold","bold"],["Italic","italic"],["Quote","blockquote","formatBlock"],["List","insertUnorderedList"],["Code","pre","formatBlock"],["Divider","insertHorizontalRule"],["Link","link"],["Image","image"]].map(b=>`<button class="btn" data-ed="${b[2]||b[1]}" data-v="${b[2]?b[1]:""}">${b[0]}</button>`).join("")}</div><div class="ed" id="ae" contenteditable="true" role="textbox" aria-label="Article body"><p>Start writing here.</p></div><p style="margin-top:14px"><button class="btn p" data-act="apub">Publish</button></p></div>`}};
+pages.profile=h=>{const u=U(h);meta(u.n);const vs=byV().filter(v=>v.u===u.id),as=BE.articles.list().filter(a=>a.u===u.id);return{html:`<div class="banner" style="background:linear-gradient(120deg,${hue(u.hue,40,14)},${hue(u.hue+20,45,34)})"></div><div class="ph"><span class="av" style="background:${hue(u.hue,30,38)}">${esc(u.n[0])}</span><div><h1 style="font-size:28px">${esc(u.n)}</h1><div class="sub">@${esc(u.h)}, ${nf(u.fol)} followers, ${vs.length} videos, ${as.length} articles</div></div><button class="btn p" data-act="follow" data-id="${u.id}">${ME.follow.includes(u.id)?"Following":"Follow"}</button></div><p style="padding:14px 20px">${esc(u.bio)}</p>
+ <div class="tabs" role="tablist">${["Videos","Articles","Liked","About"].map((t,i)=>`<button role="tab" data-tab="${t}" class="${i?"":"on"}">${t}</button>`).join("")}</div><div id="tp">${grid(vs)}</div>`,mount(){$$(".tabs button").forEach(b=>b.onclick=()=>{$$(".tabs button").forEach(x=>x.classList.toggle("on",x===b));const t=b.dataset.tab;$("#tp").innerHTML=t==="Videos"?grid(vs):t==="Articles"?`<div class="grid">${as.map(acard).join("")}</div>`:t==="Liked"?grid(byV().filter(v=>ME.liked.includes(v.id))):`<div class="box">Joined ${new Date(u.joined).toLocaleDateString()}. ${esc(u.bio)}</div>`})}}};
+const vidsFrom=ids=>ids.map(i=>BE.videos.get(i)).filter(Boolean);
+pages.history=()=>({html:`<h1>History</h1>${grid(vidsFrom(Object.entries(ME.hist).sort((a,b)=>b[1].ts-a[1].ts).map(e=>e[0])))}`});
+pages.liked=()=>({html:`<h1>Liked videos</h1>${grid(vidsFrom(ME.liked))}`});
+const libTab=t=>t==="a"?`<div class="grid">${ME.ba.map(i=>BE.articles.get(i)).filter(Boolean).map(acard).join("")||empty("No saved articles","Save articles to read them later.")}</div>`:grid(vidsFrom(ME.bm));
+pages.bookmarks=pages.library=()=>({html:`<h1>Library</h1><div class="tabs"><button class="on" data-lt="v">Videos</button><button data-lt="a">Articles</button></div><div id="lp">${libTab("v")}</div>`,mount(){$$("[data-lt]").forEach(b=>b.onclick=()=>{$$("[data-lt]").forEach(x=>x.classList.toggle("on",x===b));$("#lp").innerHTML=libTab(b.dataset.lt)})}});
+pages["my-videos"]=()=>{const m=me();if(!m)return authGate();const vs=byV().filter(v=>v.u===m.id);return{html:`<h1>My videos</h1><div class="local-note">Real video files are stored in this browser's IndexedDB. Each upload keeps the untouched original plus the playback copy. Original files can be downloaded or deleted at any time.</div>${vs.length?`<div>${vs.map(v=>`<div class="filecard"><img class="filethumb" src="${v.th||thumb(v.hue,v.id)}" alt=""><div class="filemeta"><b>${esc(v.t)}</b><div class="sub">${nf(v.views)} views · ${ago(v.d)} · ${v.originalSize?(v.originalSize/1048576).toFixed(1):"?"} MB original · ${v.playableSize?(v.playableSize/1048576).toFixed(1):"?"} MB playback</div><span class="status ok">Stored locally</span></div><div class="minirow"><a class="btn" href="#/watch/${v.id}">Watch</a><button class="btn" data-act="download-original" data-id="${v.id}">Original</button><button class="btn danger" data-act="vdel" data-id="${v.id}">Delete</button></div></div>`).join("")}</div>`:empty("No videos yet","Choose a real video file and publish it.",'<a class="btn p" href="#/upload">Upload video</a>')}<p style="margin-top:16px"><a class="btn p" href="#/upload">${I.up}Upload</a></p>`}};
+pages["my-articles"]=()=>{const m=me();if(!m)return authGate();const a=BE.articles.list().filter(x=>x.u===m.id);return{html:`<h1>My articles</h1><div class="grid">${a.map(acard).join("")||empty("No articles yet","Write your first one.")}</div><p><a class="btn p" href="#/create-article">Write</a></p>`}};
+pages.settings=()=>({html:`<div class="art"><h1>Settings</h1><div class="box"><b>Theme</b><p><button class="btn" data-act="theme">Toggle dark or light</button></p></div><div class="box" style="margin-top:12px"><b>Autoplay next video</b><p><button class="btn" data-act="auto">${LS.get("vyde.auto",true)?"On":"Off"}</button></p></div><div class="box" style="margin-top:12px"><b>Browser capabilities</b><p class="sub">WebCodecs: ${cap.wc?"available":"not available"}. Media capabilities: ${cap.mc?"available":"not available"}.</p></div><div class="box" style="margin-top:12px"><b>Local data</b><p class="sub">Videos and metadata are stored only in this browser's local storage/IndexedDB. They are not shared with other devices or users in GitHub-only mode.</p><p><button class="btn" data-act="persist">Request persistent browser storage</button> <button class="btn" data-act="reset">Reset all local data</button></p></div></div>`});
+const authGate=()=>({html:empty("Sign in to continue","This page needs an account.",'<a class="btn p" href="#/login">Sign in</a>')});
+const authForm=(kind)=>({html:`<div class="art box" style="max-width:420px"><h1 style="font-size:28px">${kind==="login"?"Sign in":kind==="register"?"Create account":"Reset password"}</h1><form id="af" novalidate>${kind==="register"?'<label for="an">Name</label><input class="f" id="an" autocomplete="name">':""}<label for="ae2">Email</label><input class="f" id="ae2" type="email" autocomplete="email">${kind!=="forgot"?'<label for="ap">Password</label><input class="f" id="ap" type="password" autocomplete="current-password">':""}<p id="er" class="sub" style="color:#e0664f" role="alert"></p><p><button class="btn p" type="submit">${kind==="login"?"Sign in":kind==="register"?"Create account":"Send reset link"}</button></p></form><p class="sub">${kind==="login"?'No account? <a href="#/register" style="text-decoration:underline">Register</a> or <a href="#/forgot-password" style="text-decoration:underline">forgot password</a>':'<a href="#/login" style="text-decoration:underline">Back to sign in</a>'}</p><p class="sub">Local demo account. Data stays in this browser.</p></div>`,mount(){$("#af").onsubmit=async e=>{e.preventDefault();const em=$("#ae2").value,pw=$("#ap")?$("#ap").value:"";try{if(kind==="forgot"){toast.info("Local demo: password reset needs a real backend");return}
+  if(kind==="register")await BE.auth.register($("#an").value,em,pw);else await BE.auth.login(em,pw);toast.success("Welcome to VYDE");shell();location.hash="#/home"}catch(x){$("#er").textContent=x.message}}}});
+pages.login=()=>authForm("login");pages.register=()=>authForm("register");pages["forgot-password"]=()=>authForm("forgot");
+pages.upload=()=>{
+ if(!me())return authGate();
+ let cur=null,step=1;
+ const box=()=>$("#up");
+ const stepper=()=>`<div class="steps">${["Select","Details","Optimize","Published"].map((s,i)=>`<span class="${i+1===step?"on":""}">${s}</span>`).join("")}</div>`;
+ const storageCheck=async f=>{const e=await IDB.estimate();if(e?.quota&&e?.usage&&e.quota-e.usage<f.size*1.35)throw Error("Not enough browser storage seems available for this file. Free space or choose a smaller video.")};
+ const draw=()=>{
+  const b=box();if(!b)return;
+  if(step===1)b.innerHTML=stepper()+`<div class="drop" id="dz"><h2 style="justify-content:center;margin:0">Drop a real video here</h2><p class="sub">This is a real browser file upload. The selected file is actually read and stored; no fake upload is simulated.</p><p><label class="btn p" style="display:inline-flex;margin:8px 0 0;color:#1b120b">Choose video<input type="file" id="fi" accept="video/*,.mkv,.avi" hidden></label></p></div>`;
+  else if(step===2)b.innerHTML=stepper()+`<div class="watch"><div><label for="ut">Title</label><input class="f" id="ut" maxlength="120" value="${esc(cur.file.name.replace(/\.[^.]+$/,""))}"><label for="ud">Description</label><textarea class="f" id="ud" rows="5" placeholder="Describe the video"></textarea><label for="uc">Category</label><select class="f" id="uc">${CATS.map(c=>`<option>${c}</option>`).join("")}</select><label for="ug">Tags</label><input class="f" id="ug" placeholder="comma, separated, tags"><label for="uv">Visibility</label><select class="f" id="uv"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select><label><input type="checkbox" id="ucm" checked> Allow comments</label><div class="minirow" style="margin-top:16px"><button class="btn p" id="pb">Continue</button><button class="btn" id="cn">Cancel</button></div></div><div class="box"><img alt="Thumbnail preview" style="width:100%;border-radius:8px" src="${cur.info.th||thumb(30,cur.id)}"><p style="margin-top:10px"><b>${esc(cur.file.name)}</b></p><p class="sub">${(cur.file.size/1048576).toFixed(1)} MB · ${fd(cur.info.dur)} · ${cur.info.w?cur.info.w+"x"+cur.info.h:"resolution unknown"} · ${esc(cur.file.type||"video")}</p><span class="status ok">Original file selected</span></div></div>`;
+  else if(step===3)b.innerHTML=stepper()+`<div class="box"><h2 style="margin:0">Optimize playback</h2><p class="sub">The original file is preserved untouched. VYDE creates a smaller playback file in the browser when MediaRecorder + canvas capture are supported. You can still download the original at full size.</p><div class="prog"><i id="encpg" style="width:${cur.encodeP||0}%"></i></div><p id="encst" class="sub">${esc(cur.encodeMsg||"Ready to optimize.")}</p><div class="minirow"><button class="btn p" id="publishNow">Optimize & publish</button><button class="btn" id="backDetails">Back</button></div></div>`;
+  else b.innerHTML=stepper()+`<div class="box"><h2 style="margin:0">Published</h2><p>Your real video files are stored in this browser. The original is untouched and the playback copy is ready.</p><p class="sub">${cur.compression?.savedPct>0?`Playback saved about ${cur.compression.savedPct.toFixed(0)}% storage.`:"Playback uses the original file because no smaller copy was produced."}</p><div class="minirow" style="margin-top:14px"><a class="btn p" href="#/watch/${cur.id}">Watch video</a><button class="btn" data-act="download-original" data-id="${cur.id}">Download original</button><a class="btn" href="#/my-videos">Manage videos</a><a class="btn" href="#/upload">Upload another</a></div></div>`;
+  bindU()
+ };
+ const finish=async()=>{
+  const t=$("#ut").value.trim();if(t.length<3)return toast.error("Title needs at least 3 characters");
+  await storageCheck(cur.file);cur.title=t;cur.desc=$("#ud").value.trim();cur.cat=$("#uc").value;cur.tags=$("#ug").value.split(",").map(x=>x.trim()).filter(Boolean).slice(0,20);cur.vis=$("#uv").value;cur.allowComments=$("#ucm")?.checked!==false;cur.state="processing";cur.encodeP=0;cur.encodeMsg="Starting browser optimization…";draw();
+  try{
+   await UM.optimize(cur.id,(pct,msg)=>{cur.encodeP=pct;cur.encodeMsg=msg;const p=$("#encpg"),st=$("#encst");if(p)p.style.width=Math.round(pct)+"%";if(st)st.textContent=msg});
+   const originalOK=await BE.uploads.putOriginal(cur.id,cur.file),playableOK=await BE.uploads.putPlayable(cur.id,cur.playable||cur.file);
+   if(!originalOK||!playableOK)throw Error("The browser could not save the original and playback files.");
+   BE.videos.add({id:cur.id,t,desc:cur.desc,c:cur.cat,tags:cur.tags,u:me().id,views:0,likes:0,d:Date.now(),hue:30,th:cur.info.th,vis:cur.vis,comments:cur.allowComments,originalName:cur.file.name,originalType:cur.file.type||"application/octet-stream",playableType:(cur.playable||cur.file).type||"video/webm",originalKey:"original:"+cur.id,playableKey:"playable:"+cur.id,originalSize:cur.file.size,playableSize:(cur.playable||cur.file).size,compression:cur.compression});
+   step=4;draw();toast.success("Video published locally")
+  }catch(e){cur.state="error";cur.encodeMsg="Could not publish: "+e.message;draw();toast.error(e.message)}
+ };
+ const bindU=()=>{
+  const dz=$("#dz");
+  if(dz){const take=async f=>{try{cur=await UM.createUpload(f);step=2;draw()}catch(e){modal.open(`<h2 style="margin:0 0 8px">Upload error</h2><p>${esc(e.message)}</p><p><button class="btn p" data-act="close">OK</button></p>`)}};dz.ondragover=e=>{e.preventDefault();dz.classList.add("hot")};dz.ondragleave=()=>dz.classList.remove("hot");dz.ondrop=e=>{e.preventDefault();dz.classList.remove("hot");take(e.dataTransfer.files[0])};$("#fi").onchange=e=>take(e.target.files[0])}
+  if($("#pb"))$("#pb").onclick=()=>{step=3;draw()};
+  if($("#cn"))$("#cn").onclick=()=>{UM.cancel(cur?.id);cur=null;step=1;draw()};
+  if($("#publishNow"))$("#publishNow").onclick=finish;
+  if($("#backDetails"))$("#backDetails").onclick=()=>{step=2;draw()}
+ };
+ return{html:`<h1>Upload</h1><div class="local-note"><b>GitHub-only mode:</b> this build really reads and saves your selected video in this browser. It does not pretend to upload to a central server. The original file remains downloadable and deletable, and a smaller playback copy is created when supported.</div><div id="up"></div>`,mount(){draw()}}
+};
+pages.admin=pages.admin=()=>{const m=me();if(!m||m.role!=="admin")return{html:empty("Admins only","Register a new account, or sign in as an admin. Local demo admins are seeded users only.")};const mx=Math.max(...CATS.map(c=>DB.videos.filter(v=>v.c===c).length));const kb=Math.round(JSON.stringify(DB).length/1024);
+ return{html:`<h1>Admin</h1><div class="metric" style="margin:16px 0">${[["Users",DB.users.length],["Videos",DB.videos.length],["Articles",DB.articles.length],["Comments",DB.comments.length],["Storage",kb+" KB"]].map(x=>`<div class="box"><b>${x[1]}</b>${x[0]}</div>`).join("")}</div><div class="box"><b>Videos per category</b><svg viewBox="0 0 360 100" style="width:100%;height:120px">${CATS.map((c,i)=>{const h=DB.videos.filter(v=>v.c===c).length/mx*80;return`<rect x="${i*30+4}" y="${90-h}" width="22" height="${h}" rx="3" fill="var(--a)"/>`}).join("")}</svg></div><h2>Videos</h2><table>${DB.videos.slice(0,12).map(v=>`<tr><td>${esc(v.t)}</td><td>${nf(v.views)}</td><td><button class="btn" data-act="vdel" data-id="${v.id}">Delete</button></td></tr>`).join("")}</table><h2>Reports</h2><p class="sub">${DB.reports.length} open reports</p>`}};
+pages.notfound=()=>({html:empty("Page not found","Check the address or go back home.",'<a class="btn p" href="#/home">Home</a>')});
+/* ================= SHELL / EVENTS ================= */
+function shell(){const u=me(),d=document.documentElement.dataset.theme;
+ $("#root").innerHTML=`<header><button class="ic mh dsk-none" data-act="drawer" aria-label="Open menu" style="display:grid">${I.menu}</button><a class="logo" href="#/home" aria-label="VYDE home">${I.logo}<span class="kb">VYDE</span></a><div class="search"><span>${I.search}</span><input id="q" type="search" placeholder="Search videos, articles, creators" aria-label="Search" autocomplete="off"><kbd class="kb">/</kbd><div class="sug" id="sug"></div></div>
+ <a class="btn p dsk" href="#/upload">${I.up}Upload</a><div style="position:relative"><button class="ic" data-act="dd" data-d="nt" aria-label="Notifications">${I.bell}</button><div class="dd" id="nt"><a href="#/home">New comment on your video</a><a href="#/articles">New article from a creator you follow</a><a href="#/upload">Your video is ready</a></div></div><button class="ic dsk" data-act="theme" aria-label="Toggle theme">${I.sun}</button>
+ <div style="position:relative"><button class="ic" data-act="dd" data-d="um" aria-label="Account menu">${u?`<span class="av" style="background:${hue(u.hue,30,38)}">${esc(u.n[0])}</span>`:I.gear}</button><div class="dd" id="um">${u?`<a href="#/profile/${esc(u.h)}">My profile</a><a href="#/settings">Settings</a><button data-act="logout">Sign out</button>`:'<a href="#/login">Sign in</a><a href="#/register">Create account</a><a href="#/settings">Settings</a>'}</div></div></header>
+ <div class="wrap"><aside aria-label="Sidebar">${NAV.map(n=>typeof n==="string"?`<h6>${n}</h6>`:`<a href="#/${n[1]}">${n[2]}<span>${n[0]}</span></a>`).join("")}<button class="btn dsk" data-act="min" style="margin:14px 8px" aria-label="Collapse sidebar">${I.menu}</button></aside><main id="main" tabindex="-1"></main></div>
+ <nav class="bn" aria-label="Mobile">${[["Home","home",I.home],["Videos","videos",I.film],["","upload",I.plus],["Articles","articles",I.doc],["Library","library",I.bm]].map(n=>`<a href="#/${n[1]}" aria-label="${n[0]||"Upload"}" class="${n[0]?"":"plus"}">${n[2]}${n[0]}</a>`).join("")}</nav>`;
+ const q=$("#q"),sg=$("#sug");const sug=()=>{const v=q.value.trim().toLowerCase(),src=v?DB.videos.filter(x=>x.t.toLowerCase().includes(v)).slice(0,5).map(x=>x.t):ME.search;sg.innerHTML=src.map(s=>`<a href="#/search/${encodeURIComponent(s)}">${esc(s)}</a>`).join("");sg.classList.toggle("on",!!src.length)};
+ q.oninput=sug;q.onfocus=sug;q.onkeydown=e=>{if(e.key==="Enter"&&q.value.trim()){location.hash="#/search/"+encodeURIComponent(q.value.trim());sg.classList.remove("on");q.blur()}if(e.key==="Escape")sg.classList.remove("on")};
+ q.onsearch=()=>{if(!q.value)sg.classList.remove("on")}}
+const downloadBlob=async(id,kind)=>{
+ const v=BE.videos.get(id);if(!v)return toast.error("Video no longer exists.");
+ const b=kind==="original"?await BE.uploads.getOriginal(id):await BE.uploads.getPlayable(id);if(!b)return toast.error("The requested file is not stored in this browser.");
+ const url=URL.createObjectURL(b),a=document.createElement("a"),base=(v.t||"VYDE-video").replace(/[^\w\-]+/g,"_"),origExt=(v.originalName||"video.mp4").split(".").pop()||"mp4",ext=kind==="original"?origExt:((b.type||"video/webm").includes("mp4")?"mp4":"webm");a.href=url;a.download=base+"-"+kind+"."+ext;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);toast.success("Download started");
+};
+const deleteVideo=async id=>{
+ const v=BE.videos.get(id);if(!v)return;
+ if(!confirm(`Delete “${v.t}” and both stored files from this browser? This cannot be undone.`))return;
+ await BE.uploads.deleteAll(id);BE.videos.remove(id);ME.bm=ME.bm.filter(x=>x!==id);ME.liked=ME.liked.filter(x=>x!==id);delete ME.hist[id];saveMe();
+ location.hash==="#/watch/"+id?location.hash="#/my-videos":route();toast.success("Video deleted");
+};
+const acts={
+ close:()=>modal.close(),drawer:()=>document.body.classList.toggle("drawer"),min:()=>document.body.classList.toggle("min"),
+ dd:t=>{$$(".dd").forEach(d=>d.classList.toggle("on",d.id===t.dataset.d&&!d.classList.contains("on")))},
+ theme:()=>{const d=document.documentElement;d.dataset.theme=d.dataset.theme==="dark"?"light":"dark";LS.set("vyde.theme",d.dataset.theme)},
+ auto:t=>{const v=!LS.get("vyde.auto",true);LS.set("vyde.auto",v);t.textContent=v?"On":"Off"},
+ persist:async()=>{const ok=await IDB.requestPersistence();toast.info(ok?"Persistent browser storage granted.":"The browser did not grant persistent storage.")},
+ logout:()=>{BE.auth.logout();shell();location.hash="#/home";route();toast.info("Signed out")},
+ reset:async()=>{if(confirm("Reset all local VYDE data? This removes accounts, metadata and stored videos from this browser.")){["vyde.db","vyde.me","vyde.cred","vyde.session"].forEach(k=>localStorage.removeItem(k));await IDB.clear();location.reload()}},
+ save:t=>{const i=ME.bm.indexOf(t.dataset.id);i<0?ME.bm.push(t.dataset.id):ME.bm.splice(i,1);saveMe();toast.success(i<0?"Saved":"Removed from saved")},
+ asave:t=>{const i=ME.ba.indexOf(t.dataset.id);i<0?ME.ba.push(t.dataset.id):ME.ba.splice(i,1);saveMe();toast.success(i<0?"Saved":"Removed from saved")},
+ like:t=>{const i=ME.liked.indexOf(t.dataset.id);i<0?ME.liked.push(t.dataset.id):ME.liked.splice(i,1);saveMe();route()},
+ dislike:()=>toast.info("Thanks for the feedback"),
+ follow:t=>{if(!me())return authNeed();const i=ME.follow.indexOf(t.dataset.id);i<0?ME.follow.push(t.dataset.id):ME.follow.splice(i,1);saveMe();t.textContent=i<0?"Following":"Follow"},
+ share:async t=>{const url=location.href;try{if(navigator.share)await navigator.share({title:document.title,url});else{await navigator.clipboard.writeText(url);toast.success("Link copied")}}catch{modal.open(`<h2 style="margin:0 0 8px">Share</h2><input class="f" readonly value="${esc(url)}"><p><button class="btn p" data-act="close">Done</button></p>`)}},
+ report:t=>modal.open(`<h2 style="margin:0 0 8px">Report</h2><select class="f" id="rr"><option>Spam</option><option>Harassment</option><option>Copyright</option><option>Other</option></select><p style="margin-top:12px"><button class="btn p" data-act="rsend" data-id="${t.dataset.id}">Send report</button> <button class="btn" data-act="close">Cancel</button></p>`),
+ rsend:t=>{DB.reports.push({id:t.dataset.id,r:$("#rr").value,d:Date.now()});save();modal.close();toast.success("Report sent")},
+ cadd:t=>{if(!me())return authNeed();const i=$("#cin"),x=i.value.trim();if(!x)return toast.warning("Write something first");BE.comments.add({id:"c"+Date.now(),tg:t.dataset.t,u:me().id,x,likes:0,d:Date.now(),p:t.dataset.p||null});$("#cm").innerHTML=cmHtml(t.dataset.t)},
+ reply:t=>{if(!me())return authNeed();const i=$("#cin");i.placeholder="Write a reply";i.focus();const b=$("[data-act=cadd]");b.dataset.p=t.dataset.id},
+ clike:t=>{BE.comments.like(t.dataset.id);const tg=(DB.comments.find(c=>c.id===t.dataset.id)||{}).tg;$("#cm").innerHTML=cmHtml(tg)},
+ cdel:t=>{const c=DB.comments.find(c=>c.id===t.dataset.id);BE.comments.remove(t.dataset.id);if(c)$("#cm").innerHTML=cmHtml(c.tg);toast.success("Comment deleted")},
+ vdel:t=>deleteVideo(t.dataset.id),
+ "download-original":t=>downloadBlob(t.dataset.id,"original"),
+ "download-playable":t=>downloadBlob(t.dataset.id,"playable"),
+ vtools:t=>modal.open(`<h2 style="margin:0 0 10px">Video actions</h2><p class="sub">Manage the real files stored in this browser.</p><p class="minirow"><button class="btn" data-act="download-original" data-id="${t.dataset.id}">Download original</button><button class="btn" data-act="download-playable" data-id="${t.dataset.id}">Download playback</button><button class="btn danger" data-act="vdel" data-id="${t.dataset.id}">Delete</button><button class="btn" data-act="close">Close</button></p>`),
+ apub:()=>{const t=$("#at").value.trim(),b=sanitize($("#ae").innerHTML);if(t.length<3)return toast.error("Add a title");const id="a"+Date.now();BE.articles.add({id,t,c:$("#ac").value,u:me().id,views:0,d:Date.now(),hue:30,tags:[],body:b});toast.success("Published");location.hash="#/article/"+id}};
+const authNeed=()=>{modal.open(`<h2 style="margin:0 0 8px">Sign in required</h2><p>Create an account or sign in to do this.</p><p><a class="btn p" href="#/login" data-act="close">Sign in</a> <button class="btn" data-act="close">Not now</button></p>`)};
+document.addEventListener("click",e=>{const t=e.target.closest("[data-act]");if(t){const f=acts[t.dataset.act];if(f){if(t.tagName!=="A")e.preventDefault();f(t)}}
+ const ed=e.target.closest("[data-ed]");if(ed){e.preventDefault();$("#ae").focus();const c=ed.dataset.ed;if(c==="link"){const u=prompt("Link address (https://)");if(u&&/^https?:\/\//i.test(u))document.execCommand("createLink",false,u);else if(u)toast.error("Only http and https links are allowed")}else if(c==="image"){const u=prompt("Image address (https://)");if(u&&/^https:\/\//i.test(u))document.execCommand("insertImage",false,u);else if(u)toast.error("Use an https image address")}else document.execCommand(c,false,ed.dataset.v||null)}
+ if(e.target.id==="modal")modal.close();if(!e.target.closest(".dd")&&!e.target.closest("[data-act=dd]"))$$(".dd").forEach(d=>d.classList.remove("on"));if(!e.target.closest(".search"))$("#sug")&&$("#sug").classList.remove("on");
+ if(e.target.closest("aside a"))document.body.classList.remove("drawer")});
+document.addEventListener("change",e=>{if(e.target.dataset.sort){$("#cm").innerHTML=cmHtml(e.target.dataset.sort,e.target.value)}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")modal.close();if(e.key==="/"&&!/INPUT|TEXTAREA/.test(document.activeElement.tagName)&&!document.activeElement.isContentEditable){e.preventDefault();$("#q")&&$("#q").focus()}});
+addEventListener("hashchange",route);addEventListener("beforeunload",saveMe);
+addEventListener("unhandledrejection",e=>{console.error(e.reason)});
+/* ================= BOOTSTRAP ================= */
+document.documentElement.dataset.theme=LS.get("vyde.theme","dark");IDB.open().catch(()=>toast.error("Browser storage is unavailable; uploads cannot be stored."));shell();if(!location.hash)location.hash="#/home";route();
 </script>
 </body>
 </html>
