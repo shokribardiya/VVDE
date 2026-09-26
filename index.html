@@ -1,363 +1,338 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.github.com ws: wss: https:">
-<title>OBLIVION COMMAND</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Global Internet Graph</title>
 <style>
-:root{--bg:#0b0a09;--p1:#141210;--p2:#1c1916;--ln:#2e2822;--cu:#c07a45;--br:#6b3f24;--iv:#eee6d6;--mu:#9a8f80;--bad:#c4553b;color-scheme:dark}
-*{box-sizing:border-box}html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--iv);font:14px/1.45 system-ui,sans-serif;display:flex;flex-direction:column}
-h1,h2,h3{font-family:"Iowan Old Style",Georgia,serif;font-weight:500;margin:0}
-.id,td.id,.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--cu)}
-a{color:var(--cu)}button,input,select,textarea{font:inherit;color:var(--iv);background:var(--p2);border:1px solid var(--ln);border-radius:2px;padding:6px 10px}
-button{cursor:pointer}button:hover{border-color:var(--cu)}button.pri{background:var(--br);border-color:var(--cu)}
-:focus-visible{outline:2px solid var(--cu);outline-offset:1px}
-header{display:flex;gap:12px;align-items:center;padding:0 14px;height:48px;border-bottom:1px solid var(--ln);background:var(--p1);flex:none}
-header .brand{font-family:Georgia,serif;letter-spacing:.14em;font-size:15px}
-header .sp{flex:1}.chip{font-size:11px;color:var(--mu);border:1px solid var(--ln);padding:2px 8px;border-radius:2px;white-space:nowrap}
-.warnbar{background:var(--br);padding:4px 14px;font-size:12px;flex:none}
-#app{flex:1;display:flex;min-height:0}
-nav{width:176px;border-right:1px solid var(--ln);background:var(--p1);overflow:auto;flex:none;padding:8px 0}
-nav a{display:block;padding:7px 16px;color:var(--mu);text-decoration:none;border-left:2px solid transparent}
-nav a.on{color:var(--iv);border-left-color:var(--cu);background:var(--p2)}
-#main{flex:1;min-width:0;overflow:auto;padding:16px}
-#insp{width:0;overflow:auto;border-left:1px solid var(--ln);background:var(--p1);flex:none;transition:width .15s}
-#insp.open{width:390px;padding:14px}
-.pane{display:flex;flex-direction:column;gap:12px;height:100%}
-.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.bar h2{margin-right:auto;font-size:22px}
-.scroll{overflow:auto;flex:1}
-table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;color:var(--mu);border-bottom:1px solid var(--ln);padding:6px 8px;position:sticky;top:0;background:var(--bg)}
-td{padding:7px 8px;border-bottom:1px solid var(--ln)}tr[tabindex]{cursor:pointer}tr.on,tr[tabindex]:hover{background:var(--p2)}
-.b{font-size:11px;padding:1px 6px;border:1px solid var(--ln);border-radius:2px}.b-PENDING{color:var(--cu);border-color:var(--cu)}.b-CONFIRMED{color:var(--iv);border-color:var(--iv)}.b-FAILED{color:var(--bad);border-color:var(--bad)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1px;background:var(--ln);border:1px solid var(--ln)}
-.panel{background:var(--bg);padding:12px;min-height:120px}.panel h3{font-size:16px;margin-bottom:8px}
-.li{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--ln);cursor:pointer}.li span:last-child{margin-left:auto;color:var(--mu)}
-.mu,.mut{color:var(--mu)}.empty{color:var(--mu);padding:20px;border:1px dashed var(--ln)}
-.ih{display:flex;justify-content:space-between;gap:8px;margin-bottom:10px}
-.kvr{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid var(--ln)}.kvr span:first-child{width:90px;color:var(--mu);flex:none}
-.acts{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
-#insp h4{margin:14px 0 6px;font-size:12px;color:var(--mu);font-weight:500}
-pre{white-space:pre-wrap;word-break:break-word;background:var(--p2);padding:8px;margin:6px 0;max-height:260px;overflow:auto}
-.gwrap{position:relative;flex:1;min-height:320px;border:1px solid var(--ln);background:radial-gradient(circle at 50% 40%,#1a1512,#0b0a09 70%)}.gcv{width:100%;height:100%;display:block;touch-action:none}
-.chips{display:flex;gap:6px;flex-wrap:wrap}.chips button.off{opacity:.4}
-.ov{position:fixed;inset:0;background:#000a;display:flex;justify-content:center;align-items:flex-start;padding-top:12vh;z-index:20}
-.pal{width:min(640px,94vw);background:var(--p1);border:1px solid var(--cu)}.pal input{width:100%;border:0;border-bottom:1px solid var(--ln);padding:12px}
-.plist{max-height:50vh;overflow:auto}.pi{display:flex;justify-content:space-between;padding:8px 12px;cursor:pointer}.pi.on{background:var(--br)}.pi small{color:var(--mu)}
-dialog{background:var(--p1);color:var(--iv);border:1px solid var(--cu);width:min(520px,94vw)}dialog::backdrop{background:#000b}
-dialog label{display:block;margin:10px 0;color:var(--mu)}dialog input,dialog select,dialog textarea{display:block;width:100%;margin-top:4px}
-.row{display:flex;gap:8px;justify-content:flex-end}.ferr{color:var(--bad);min-height:1em}
-#toasts{position:fixed;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;z-index:30;max-width:min(420px,92vw)}
-.toast{background:var(--p2);border-left:3px solid var(--cu);padding:8px 12px}.toast.err{border-left-color:var(--bad)}
-.term{background:var(--p1);border:1px solid var(--ln);padding:10px;flex:1;overflow:auto;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
-.term-in{width:100%}.tabs{display:flex;gap:2px;flex-wrap:wrap}.tabs button.on{background:var(--br)}
-.art{border-bottom:1px solid var(--ln);padding:14px 0;max-width:72ch}.hero{max-width:60ch;padding:24px 0}.hero h1{font-size:34px;line-height:1.15}
-@media(max-width:800px){
-#app{flex-direction:column}nav{order:2;width:100%;display:flex;overflow-x:auto;border:0;border-top:1px solid var(--ln);padding:0}
-nav a{padding:14px 16px;border-left:0;border-top:2px solid transparent;white-space:nowrap}nav a.on{border-top-color:var(--cu)}
-#insp{position:fixed;left:0;right:0;bottom:0;top:auto;width:100%!important;height:0;z-index:10;border-top:1px solid var(--cu)}
-#insp.open{height:72vh;padding:14px}button,input,select{min-height:40px}
-}
-@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+  :root{color-scheme:dark}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace;color:#c9d3d8}
+  canvas{display:block}
+  .panel{position:fixed;font-size:11px;letter-spacing:.3px;line-height:1.7;pointer-events:none;user-select:none;transition:opacity .4s}
+  #title{top:16px;left:18px}
+  #title .name{font-size:13px;letter-spacing:2px;color:#eef2f4}
+  #title .sub{opacity:.45;font-size:9px;letter-spacing:1px;margin-top:2px}
+  #status{bottom:16px;left:18px;opacity:.75}
+  #status .row span.ok{color:#8fd19e}
+  #status .row span.bad{color:#d18f8f}
+  #status .row span.warn{color:#d1c48f}
+  #perf{bottom:16px;right:18px;text-align:right;opacity:.6}
+  #search{position:fixed;top:16px;right:18px;pointer-events:auto}
+  #search input{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);color:#dfe6e9;padding:6px 10px;font:11px ui-monospace,monospace;width:170px;outline:none}
+  #search input::placeholder{color:#5a6468}
+  #inspector{display:none;position:fixed;bottom:70px;left:18px;background:rgba(8,9,11,.78);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.1);padding:12px 14px;font-size:11px;max-width:260px;line-height:1.75;pointer-events:auto}
+  #inspector .k{opacity:.5}
+  #inspector .v{color:#fff}
+  #inspector .type{font-size:9px;letter-spacing:1px;opacity:.5;margin-bottom:6px}
+  #legend{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-size:9px;opacity:.35;display:flex;gap:16px;letter-spacing:.5px}
+  #legend span{display:flex;align-items:center;gap:5px}
+  #legend i{width:6px;height:6px;border-radius:50%;display:inline-block}
+  #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:2px;color:#7a8288;background:#000;z-index:5}
+  #events{display:none;position:fixed;top:60px;right:18px;width:260px;max-height:300px;overflow:auto;background:rgba(8,9,11,.78);border:1px solid rgba(255,255,255,.1);font-size:10px;padding:10px;pointer-events:auto}
+  #events div{opacity:.7;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 </style>
 </head>
 <body>
-<header id="hdr"></header><div id="warn"></div>
-<div id="app"><nav id="nav" aria-label="Views"></nav><main id="main"></main><aside id="insp" aria-label="Object inspector"></aside></div>
-<div id="toasts" role="status" aria-live="polite"></div>
+<div id="boot">INITIALIZING GRAPH ENGINE</div>
+<div class="panel" id="title">
+  <div class="name">GLOBAL INTERNET GRAPH</div>
+  <div class="sub">LIVE OBSERVATORY · GITHUB PUBLIC EVENTS + HACKER NEWS · PRESS E FOR EVENT LOG</div>
+</div>
+<div class="panel" id="status">
+  <div class="row">GITHUB EVENTS <span id="h-gh">CONNECTING</span></div>
+  <div class="row">HACKER NEWS <span id="h-hn">CONNECTING</span></div>
+  <div class="row">OBSERVED NODES <span class="v" id="s-nodes">0</span></div>
+  <div class="row">OBSERVED EDGES <span class="v" id="s-edges">0</span></div>
+  <div class="row">LAST EVENT <span id="s-last">—</span></div>
+</div>
+<div class="panel" id="perf">
+  <div id="p-mode">WEBGL2</div>
+  <div id="p-fps">0 FPS</div>
+</div>
+<div id="search"><input id="q" placeholder="search domain / repo / user…" autocomplete="off"></div>
+<div id="inspector"></div>
+<div id="events"></div>
+<div id="legend">
+  <span><i style="background:#8a6fd1"></i>repository</span>
+  <span><i style="background:#7a8ea3"></i>account</span>
+  <span><i style="background:#e3e8ea"></i>domain</span>
+  <span><i style="background:#6fbccf"></i>hacker news</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
-'use strict';
-/* ============ Config (public values only — never put secrets here) ============ */
-const CONFIG={
-  api:'',            // e.g. 'https://ops.example.org' — backend origin; empty = local-only mode
-  ws:'', sse:'',     // realtime endpoints; if empty and api set, polling /api/events is used
-  loginUrl:'',       // where to send unauthenticated users (Cloudflare Access / OIDC / OTP)
-  github:{repos:[]}, // public repos as 'owner/name'
-  pollMs:15000
-};
-/* ============ Core helpers ============ */
-const $=(s,r=document)=>r.querySelector(s);
-const h=(t,p,...c)=>{const e=document.createElement(t);for(const k in p||{}){const v=p[k];if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)e.setAttribute(k,v===true?'':v)}for(const x of c.flat(9))if(x!=null&&x!==false)e.append(x.nodeType?x:document.createTextNode(String(x)));return e};
-const now=()=>new Date().toISOString(),fmt=t=>t?new Date(t).toLocaleString():'';
-const hash=s=>{let x=2166136261;for(let i=0;i<s.length;i++){x^=s.charCodeAt(i);x=Math.imul(x,16777619)}return(x>>>0).toString(16).padStart(8,'0')};
-const empty=m=>h('div',{class:'empty'},m),badge=s=>h('span',{class:'b b-'+s},s);
-const S={objects:{},rels:[],audit:[],notifs:[],seq:{},fav:[],gh:{},cfg:{},layout:{},view:'command',sel:null,session:null,csrf:'',rt:'OFF',api:CONFIG.api?'UNKNOWN':'NOT CONFIGURED',online:navigator.onLine,filter:{},gmode:'GRAPH',gtypes:null,ptab:'home',term:[],msgs:[],integ:null,storageOk:true,frame:0};
-/* ============ Errors & toasts ============ */
-function toast(m,k){const t=h('div',{class:'toast '+(k||'')},m);$('#toasts').append(t);setTimeout(()=>t.remove(),6500)}
-const Err={show(cat,msg,fix){toast(cat+': '+msg+(fix?' — '+fix:''),'err');if(['NETWORK','STORAGE','INTEGRATION'].includes(cat))Notif.push('SYSTEM_ERROR',null,cat+': '+msg)}};
-/* ============ Storage ============ */
-const Storage={k:'oblivion.command.v1',keys:['objects','rels','audit','notifs','seq','fav','gh','cfg','layout'],
-  load(){try{const d=JSON.parse(localStorage.getItem(this.k)||'null');if(d)for(const k of this.keys)if(d[k])S[k]=d[k]}catch(e){S.storageOk=false}},
-  save(){try{const d={};for(const k of this.keys)d[k]=S[k];localStorage.setItem(this.k,JSON.stringify(d));S.storageOk=true}catch(e){S.storageOk=false;Err.show('STORAGE','Local storage unavailable','export data and free browser storage')}}};
-/* ============ Permissions ============ */
-const ROLES={ADMIN:['*'],
- OPERATOR:['reports.read','reports.create','reports.assign','reports.close','cases.manage','tasks.manage','people.read','documents.manage','publications.read','projects.manage','audit.read'],
- EDITOR:['reports.read','reports.create','publications.read','publications.create','publications.approve','publications.publish','documents.manage','tasks.manage'],
- ENGINEER:['reports.read','reports.create','tasks.manage','documents.manage','publications.read','publications.create','people.read','projects.manage'],
- MEMBER:['reports.read','reports.create','tasks.manage','publications.read','people.read'],VIEWER:['reports.read','publications.read']};
-const can=c=>{const r=ROLES[S.session.role]||[];return r.includes('*')||r.includes(c)};
-/* ============ Workflow engine ============ */
-const WF={
- report:{init:'SUBMITTED',t:{SUBMITTED:['RECEIVED'],RECEIVED:['IN_REVIEW'],IN_REVIEW:['ASSIGNED','RESOLVED'],ASSIGNED:['IN_PROGRESS'],IN_PROGRESS:['RESOLVED'],RESOLVED:['ARCHIVED','IN_PROGRESS'],ARCHIVED:[]},cap:{ARCHIVED:'reports.close',d:'reports.assign'}},
- case:{init:'OPEN',t:{OPEN:['IN_PROGRESS'],IN_PROGRESS:['RESOLVED'],RESOLVED:['CLOSED','IN_PROGRESS'],CLOSED:['OPEN']},cap:{d:'cases.manage'}},
- task:{init:'TODO',t:{TODO:['IN_PROGRESS'],IN_PROGRESS:['BLOCKED','REVIEW','TODO'],BLOCKED:['IN_PROGRESS'],REVIEW:['DONE','IN_PROGRESS'],DONE:['ARCHIVED'],ARCHIVED:[]},cap:{d:'tasks.manage'}},
- publication:{init:'DRAFT',t:{DRAFT:['EDITORIAL_REVIEW'],EDITORIAL_REVIEW:['APPROVED','DRAFT'],APPROVED:['PUBLISHED'],PUBLISHED:['ARCHIVED'],ARCHIVED:[]},cap:{EDITORIAL_REVIEW:'publications.create',APPROVED:'publications.approve',PUBLISHED:'publications.publish',ARCHIVED:'publications.publish',DRAFT:'publications.create',d:'publications.create'}},
- document:{init:'DRAFT',t:{DRAFT:['REVIEW'],REVIEW:['APPROVED','DRAFT'],APPROVED:['PUBLISHED'],PUBLISHED:['ARCHIVED'],ARCHIVED:[]},cap:{d:'documents.manage'}},
- person:{init:'ACTIVE',t:{ACTIVE:['INACTIVE'],INACTIVE:['ACTIVE']},cap:{d:'people.manage'}},
- project:{init:'PLANNED',t:{PLANNED:['ACTIVE'],ACTIVE:['ARCHIVED'],ARCHIVED:[]},cap:{d:'projects.manage'}},
- system:{init:'PLANNED',t:{PLANNED:['ACTIVE'],ACTIVE:['ARCHIVED'],ARCHIVED:[]},cap:{d:'projects.manage'}}};
-const CAPM={report:'reports.assign',case:'cases.manage',task:'tasks.manage',person:'people.manage',document:'documents.manage',publication:'publications.create',project:'projects.manage',system:'projects.manage'};
-const PRI=['NORMAL','LOW','HIGH','CRITICAL'];
-const F=(k,l,t,o,req,max)=>({k,l,t,o,req,max});
-const TYPES={report:{p:'RPT',label:'Report',cap:'reports.create',col:'#c07a45'},case:{p:'CASE',label:'Case',cap:'cases.manage',col:'#e0a370'},task:{p:'TSK',label:'Task',cap:'tasks.manage',col:'#9a8f80'},person:{p:'PPL',label:'Person',cap:'people.manage',col:'#eee6d6'},document:{p:'DOC',label:'Document',cap:'documents.manage',col:'#b39a7a'},publication:{p:'PUB',label:'Publication',cap:'publications.create',col:'#d8c3a0'},project:{p:'PRJ',label:'Project',cap:'projects.manage',col:'#8a4f2b'},system:{p:'SYS',label:'System',cap:'projects.manage',col:'#6b3f24'}};
-const FORMS={
- report:[F('title','Title','',0,1,120),F('category','Category','select',['OPERATIONS','SECURITY','RESEARCH','ENGINEERING','OTHER']),F('priority','Priority','select',PRI),F('description','Description','textarea',0,1,4000)],
- case:[F('title','Title','',0,1,120),F('priority','Priority','select',PRI),F('description','Description','textarea')],
- task:[F('title','Title','',0,1,120),F('priority','Priority','select',PRI),F('deadline','Deadline','date'),F('description','Description','textarea')],
- person:[F('title','Name','',0,1,80),F('role','Role','select',Object.keys(ROLES)),F('contact','Contact email','email')],
- document:[F('title','Title','',0,1,120),F('doctype','Type','select',['SPEC','NOTE','POLICY','RUNBOOK','OTHER']),F('tags','Tags (comma separated)'),F('content','Content or reference','textarea')],
- publication:[F('title','Title','',0,1,160),F('ptype','Type','select',['ARTICLE','RESEARCH','STATEMENT','ANNOUNCEMENT','TECHNICAL NOTE']),F('summary','Summary','textarea',0,0,500),F('body','Body','textarea',0,1,20000),F('tags','Tags (comma separated)')],
- project:[F('title','Name','',0,1,80),F('description','Description','textarea'),F('repository','GitHub repository (owner/name)'),F('tags','Tags (comma separated; "public" shows on public site)')],
- system:[F('title','Name','',0,1,80),F('description','Description','textarea'),F('tags','Tags (comma separated; "public" shows on public site)')]};
-const RELS=['AUTHORED_BY','ASSIGNED_TO','RELATED_TO','REFERENCES','DEPENDS_ON','USES','BELONGS_TO','CREATED_FROM','DERIVED_FROM','ATTACHED_TO','MEMBER_OF'];
-/* ============ Event bus ============ */
-const Bus={m:{},on(e,f){(this.m[e]=this.m[e]||[]).push(f)},emit(e,d){(this.m[e]||[]).forEach(f=>{try{f(d)}catch(x){console.error(x)}})}};
-/* ============ API / Auth ============ */
-const Api={async req(m,p,b){if(!CONFIG.api)throw{cat:'INTEGRATION',code:'NO_BACKEND',msg:'No backend configured'};let r;
-  try{r=await fetch(CONFIG.api+p,{method:m,credentials:'include',headers:{'Content-Type':'application/json','X-CSRF-Token':S.csrf},body:b?JSON.stringify(b):undefined})}catch(e){S.api='UNREACHABLE';throw{cat:'NETWORK',msg:'Backend unreachable'}}
-  S.api='REACHABLE';if(r.status===401){Auth.expired();throw{cat:'AUTH',msg:'Session expired or missing'}}if(r.status===403)throw{cat:'PERMISSION',msg:'Forbidden by server'};if(!r.ok)throw{cat:'NETWORK',msg:'HTTP '+r.status};return r.json()}};
-const Auth={async init(){
-  if(CONFIG.api){try{const s=await Api.req('GET','/api/session');S.csrf=s.csrf||'';S.session={actor:s.actor,role:s.role,expires:s.expires,mode:'SERVER'};return}catch(e){S.session={actor:'anonymous',role:'VIEWER',mode:'ANON'};if(e.cat==='AUTH'&&CONFIG.loginUrl)location.assign(CONFIG.loginUrl);return}}
-  S.session={actor:S.cfg.actor||'local-operator',role:S.cfg.role||'ADMIN',mode:'LOCAL'}},
-  expired(){if(S.session&&S.session.mode==='SERVER'){S.session={actor:'anonymous',role:'VIEWER',mode:'ANON'};if(CONFIG.loginUrl)location.assign(CONFIG.loginUrl);else render()}}};
-const EmailService={async send(kind,p){try{const r=await Api.req('POST','/api/email/send',{kind,...p});return r.status||'PENDING'}catch(e){return e.code==='NO_BACKEND'?'NOT_SENT':'FAILED'}}};
-/* ============ Audit ledger (append-only from the UI; hash chain is a local integrity aid, not a security control) ============ */
-const Audit={add(action,target,prev,next,meta){const p=S.audit[0];const e={id:'AUD-'+String(S.audit.length+1).padStart(5,'0'),ts:now(),actor:S.session.actor,role:S.session.role,where:S.session.mode,action,target,prev:prev??null,next:next??null,meta:meta||{},sync:'PENDING',prevHash:p?p.hash:'0'};e.hash=hash(e.prevHash+JSON.stringify([e.ts,e.actor,action,target,prev,next]));S.audit.unshift(e);return e},
-  verify(){for(let i=S.audit.length-1;i>=0;i--){const e=S.audit[i],p=S.audit[i+1];if(e.prevHash!==(p?p.hash:'0')||e.hash!==hash(e.prevHash+JSON.stringify([e.ts,e.actor,e.action,e.target,e.prev,e.next])))return false}return true}};
-/* ============ Data service & commit pipeline ============ */
-const visible=o=>!(o.type==='person'&&o.props.role==='ADMIN'&&!can('people.manage'));
-const Data={get:id=>{const o=S.objects[id];return o&&visible(o)?o:null},
- list:(t,f)=>Object.values(S.objects).filter(o=>visible(o)&&(!t||o.type===t)&&(!f||f(o))).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)),
- async hydrate(){try{const r=await Api.req('GET','/api/objects');for(const o of r.objects||[])S.objects[o.id]={notes:[],tags:[],props:{},...o,sync:'CONFIRMED'};if(r.rels)S.rels=r.rels;Storage.save()}catch(e){Err.show(e.cat||'NETWORK',e.msg||'Could not load objects')}}};
-const relsOf=id=>S.rels.filter(r=>r.from===id||r.to===id);
-async function commit(c){c.apply();const o=S.objects[c.target];if(o){o.updatedAt=now();o.version=(o.version||0)+1;o.sync='PENDING'}
- const a=Audit.add(c.action,c.target,c.prev,c.next,c.meta);Bus.emit('mutation',{...c,audit:a,obj:o});Storage.save();render();
- if(!CONFIG.api)return a;let st='FAILED';
- if(!S.online)Err.show('NETWORK','Offline — change kept locally, not sent','use Settings → Retry sync when online');
- else try{const r=await Api.req('POST','/api/mutations',{audit:a,object:o});st=r.confirmed===true?'CONFIRMED':'PENDING';if(r.id&&o)o.serverId=r.id}catch(e){Err.show(e.cat||'UNKNOWN',e.msg||'Request failed','retry from Settings')}
- a.sync=st;if(o)o.sync=st;Storage.save();render();return a}
-const Sync={async flush(){if(!CONFIG.api)return Err.show('INTEGRATION','No backend configured');let n=0,f=0;for(const a of [...S.audit].reverse().filter(a=>a.sync!=='CONFIRMED')){try{const r=await Api.req('POST','/api/mutations',{audit:a,object:S.objects[a.target]});a.sync=r.confirmed===true?'CONFIRMED':'PENDING';n++}catch(e){a.sync='FAILED';f++}}
-  for(const o of Object.values(S.objects)){const l=S.audit.find(a=>a.target===o.id);if(l)o.sync=l.sync}Storage.save();Notif.push('SYNC_COMPLETE',null,n+' sent, '+f+' failed');render()}};
-/* ============ Domain actions ============ */
-const Dom={
- async create(type,d){const T=TYPES[type],core={title:1,priority:1,tags:1},props={};for(const k in d)if(!core[k])props[k]=d[k];
-  const cap=T.cap;if(!can(cap))throw{msg:'Missing capability '+cap};if(type==='project'&&d.repository&&!/^[\w.-]+\/[\w.-]+$/.test(d.repository))throw{msg:'Repository must look like owner/name'};
-  const n=S.seq[type]=(S.seq[type]||0)+1;const o={id:T.p+'-L'+String(n).padStart(4,'0'),type,title:d.title,status:WF[type].init,priority:type==='report'||type==='case'||type==='task'?d.priority||'NORMAL':null,tags:(d.tags||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean),props,notes:[],author:S.session.actor,createdAt:now(),updatedAt:now(),version:0,sync:'PENDING'};
-  const act={report:'REPORT_CREATED',case:'CASE_CREATED'}[type]||'OBJECT_CREATED';
-  await commit({action:act,target:o.id,prev:null,next:{status:o.status,title:o.title},apply:()=>{S.objects[o.id]=o}});return o},
- async update(id,d){const o=S.objects[id],cap=CAPM[o.type];if(!can(cap))throw{msg:'Missing capability '+cap};const prev={},next={};
-  for(const k in d){const cur=k==='title'?o.title:k==='priority'?o.priority:k==='tags'?o.tags.join(', '):o.props[k]||'';if(cur!==d[k]){prev[k]=cur;next[k]=d[k]}}
-  if(!Object.keys(next).length)return;await commit({action:'UPDATED',target:id,prev,next,apply:()=>{for(const k in next){if(k==='title')o.title=next[k];else if(k==='priority')o.priority=next[k];else if(k==='tags')o.tags=next[k].split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);else o.props[k]=next[k]}}})},
- async transition(id,to){const o=S.objects[id],w=WF[o.type];if(!(w.t[o.status]||[]).includes(to))return Err.show('VALIDATION','Invalid transition '+o.status+' → '+to);
-  const cap=w.cap[to]||w.cap.d;if(!can(cap))return Err.show('PERMISSION','Missing capability '+cap);const prev=o.status;
-  await commit({action:'STATUS_CHANGED',target:id,prev:{status:prev},next:{status:to},apply:()=>{o.status=to;if(to==='PUBLISHED')o.props.publishedAt=now()}})},
- async assign(id,pid){const o=S.objects[id],cap={report:'reports.assign',case:'cases.manage',task:'tasks.manage'}[o.type];if(!cap||!can(cap))throw{msg:'Missing capability '+(cap||'n/a')};
-  const old=S.rels.find(r=>r.from===id&&r.type==='ASSIGNED_TO');
-  await commit({action:'ASSIGNED',target:id,prev:{to:old?old.to:null},next:{to:pid},apply:()=>{S.rels=S.rels.filter(r=>!(r.from===id&&r.type==='ASSIGNED_TO'));S.rels.push({id:'REL-'+Date.now(),from:id,type:'ASSIGNED_TO',to:pid,ts:now()})}});
-  if(o.type==='report'&&o.status==='IN_REVIEW')await Dom.transition(id,'ASSIGNED')},
- async link(a,type,b){const o=S.objects[a];if(!can(CAPM[o.type]))throw{msg:'Missing capability '+CAPM[o.type]};if(a===b)throw{msg:'Cannot link an object to itself'};if(S.rels.some(r=>r.from===a&&r.to===b&&r.type===type))throw{msg:'Link already exists'};
-  await commit({action:'LINKED',target:a,prev:null,next:{type,to:b},apply:()=>S.rels.push({id:'REL-'+Date.now()+Math.random().toString(36).slice(2,5),from:a,type,to:b,ts:now()})})},
- async unlink(r){const o=S.objects[r.from];if(!can(CAPM[o.type]))return Err.show('PERMISSION','Missing capability '+CAPM[o.type]);await commit({action:'UNLINKED',target:r.from,prev:{type:r.type,to:r.to},next:null,apply:()=>{S.rels=S.rels.filter(x=>x.id!==r.id)}})},
- async note(id,text){const o=S.objects[id];await commit({action:'NOTE_ADDED',target:id,prev:null,next:{note:text.slice(0,200)},apply:()=>o.notes.push({ts:now(),actor:S.session.actor,text})})},
- async caseFrom(rid){if(!can('cases.manage'))return Err.show('PERMISSION','Missing capability cases.manage');const r=S.objects[rid];const c=await Dom.create('case',{title:'Case: '+r.title,priority:r.priority||'NORMAL',description:r.props.description||''});await Dom.link(c.id,'CREATED_FROM',rid)},
- async taskFor(oid,title){const t=await Dom.create('task',{title,priority:'NORMAL'});await Dom.link(t.id,'RELATED_TO',oid)}};
-/* ============ Notifications (generated from mutation events) ============ */
-const Notif={push(kind,target,text,extra){S.notifs.unshift({id:'N'+Date.now()+Math.random().toString(36).slice(2,4),kind,target,text,ts:now(),read:false,...extra});S.notifs=S.notifs.slice(0,200);Storage.save()}};
-Bus.on('mutation',async({action,target,obj,next})=>{let k=null;
- if(action==='REPORT_CREATED')k='REPORT_CREATED';else if(action==='CASE_CREATED')k='CASE_CREATED';
- else if(action==='ASSIGNED')k=obj.type==='report'?'REPORT_ASSIGNED':obj.type==='task'?'TASK_ASSIGNED':'CASE_UPDATED';
- else if(action==='STATUS_CHANGED'&&obj.type==='publication'&&next.status==='APPROVED')k='PUBLICATION_APPROVED';
- else if(obj&&obj.type==='case')k='CASE_UPDATED';else if(obj&&obj.type==='document')k='DOCUMENT_UPDATED';if(!k)return;
- const n={kind:k,target,text:action+' '+target};if(CONFIG.api&&['REPORT_CREATED','REPORT_ASSIGNED','PUBLICATION_APPROVED'].includes(k))n.email=await EmailService.send(k,{target});Notif.push(k,target,n.text,n.email?{email:n.email}:{})});
-/* ============ Realtime (WebSocket → SSE → polling) ============ */
-const RT={cursor:0,start(){
-  if(CONFIG.ws){try{S.rt='CONNECTING';const w=new WebSocket(CONFIG.ws);w.onopen=()=>{S.rt='WEBSOCKET';render()};w.onmessage=e=>RT.msg(e.data);w.onclose=()=>{S.rt='CLOSED';setTimeout(()=>RT.start(),5000)}}catch(e){S.rt='FAILED'}}
-  else if(CONFIG.sse){const s=new EventSource(CONFIG.sse,{withCredentials:true});s.onopen=()=>{S.rt='SSE';render()};s.onmessage=e=>RT.msg(e.data);s.onerror=()=>{S.rt='SSE ERROR'}}
-  else if(CONFIG.api){S.rt='POLLING';setInterval(async()=>{if(!S.online||S.session.mode!=='SERVER')return;try{const r=await Api.req('GET','/api/events?since='+RT.cursor);(r.events||[]).forEach(e=>RT.msg(JSON.stringify(e)));RT.cursor=r.cursor??RT.cursor}catch(e){}},CONFIG.pollMs)}},
- msg(d){try{const m=JSON.parse(d);if(m.type==='object.upsert'&&m.object&&m.object.id){S.objects[m.object.id]={notes:[],tags:[],props:{},...m.object,sync:'CONFIRMED'};Notif.push('DOCUMENT_UPDATED',m.object.id,'Remote update '+m.object.id)}if(m.type==='notification')Notif.push(m.kind||'SYSTEM_ERROR',m.target||null,String(m.text||'').slice(0,200));Storage.save();render()}catch(e){Err.show('INTEGRATION','Malformed realtime message')}}};
-/* ============ GitHub (real API, cached) ============ */
-const GH={state:'IDLE',repos:()=>[...new Set([...CONFIG.github.repos,...(S.cfg.repos||[])])],
- async sync(){const rs=GH.repos();if(!rs.length){GH.state='NO REPOS';return}if(!S.online){GH.state='OFFLINE (cached)';return}GH.state='LOADING';let bad=false;
-  for(const r of rs){try{const x=await fetch('https://api.github.com/repos/'+r,{headers:{Accept:'application/vnd.github+json'}});
-   if(x.status===403||x.status===429){const t=x.headers.get('x-ratelimit-reset');GH.state='RATE LIMITED'+(t?' until '+new Date(t*1000).toLocaleTimeString():'');Storage.save();return render()}
-   if(!x.ok){S.gh[r]={...(S.gh[r]||{}),error:'HTTP '+x.status};bad=true;continue}
-   const j=await x.json();S.gh[r]={at:now(),d:{name:j.full_name,desc:j.description,lang:j.language,stars:j.stargazers_count,forks:j.forks_count,issues:j.open_issues_count,pushed:j.pushed_at,branch:j.default_branch,url:j.html_url}}}catch(e){S.gh[r]={...(S.gh[r]||{}),error:'Network error'};bad=true}}
-  GH.state=bad?'PARTIAL / ERROR':'OK';Storage.save();render()}};
-/* ============ Search ============ */
-const Search={text:o=>[o.id,o.title,o.type,o.status,o.priority,o.tags.join(' '),Object.values(o.props).join(' ')].join(' ').toLowerCase(),
- query(q){const f={},w=[];q.toLowerCase().split(/\s+/).filter(Boolean).forEach(t=>{const m=t.match(/^(type|status|tag):(.+)$/);m?f[m[1]]=m[2]:w.push(t)});
-  return Data.list().map(o=>{if(f.type&&o.type!==f.type)return null;if(f.status&&o.status.toLowerCase()!==f.status)return null;if(f.tag&&!o.tags.includes(f.tag))return null;const tx=Search.text(o);if(!w.every(x=>tx.includes(x)))return null;
-   const sc=w.some(x=>o.id.toLowerCase()===x)?3:w.some(x=>o.title.toLowerCase().startsWith(x))?2:1;return[sc,o]}).filter(Boolean).sort((a,b)=>b[0]-a[0]).map(x=>x[1])}};
-/* ============ Forms / modals ============ */
-function openForm({title,fields,values={},submit='Save',onSubmit}){const dlg=h('dialog'),err=h('p',{class:'ferr'}),inp={};const close=()=>{dlg.close();dlg.remove()};
- const form=h('form',{onsubmit:async e=>{e.preventDefault();const d={};for(const f of fields){const v=inp[f.k].value.trim();if(f.req&&!v){err.textContent=f.l+' is required';return}if(f.max&&v.length>f.max){err.textContent=f.l+' is too long (max '+f.max+')';return}d[f.k]=v}try{await onSubmit(d);close()}catch(x){err.textContent=x&&x.msg||String(x)}}},
-  h('h3',{},title),...fields.map(f=>{const el=f.t==='textarea'?h('textarea',{rows:5}):f.t==='select'?h('select',{},(f.o||[]).map(o=>{const[v,l]=Array.isArray(o)?o:[o,o];return h('option',{value:v},l)})):h('input',{type:f.t||'text'});el.value=values[f.k]??'';inp[f.k]=el;return h('label',{},f.l,el)}),err,h('div',{class:'row'},h('button',{type:'button',onclick:close},'Cancel'),h('button',{class:'pri',type:'submit'},submit)));
- dlg.append(form);document.body.append(dlg);dlg.showModal()}
-const openCreate=t=>can(TYPES[t].cap)?openForm({title:'New '+TYPES[t].label.toLowerCase(),fields:FORMS[t],submit:'Create',onSubmit:d=>Dom.create(t,d)}):Err.show('PERMISSION','Missing capability '+TYPES[t].cap);
-const openEdit=o=>openForm({title:'Edit '+o.id,fields:FORMS[o.type],values:{title:o.title,priority:o.priority,tags:o.tags.join(', '),...o.props},onSubmit:d=>Dom.update(o.id,d)});
-const openAssign=o=>{const p=Data.list('person');if(!p.length)return Err.show('VALIDATION','Add a person first (People → New person)');openForm({title:'Assign '+o.id,fields:[F('p','Person','select',p.map(x=>[x.id,x.title]))],submit:'Assign',onSubmit:d=>Dom.assign(o.id,d.p)})};
-const openLink=o=>openForm({title:'Link from '+o.id,fields:[F('t','Relationship','select',RELS),F('b','Target','select',Data.list().filter(x=>x.id!==o.id).map(x=>[x.id,x.id+'  '+x.title]))],submit:'Link',onSubmit:d=>Dom.link(o.id,d.t,d.b)});
-const openNote=o=>openForm({title:'Add note to '+o.id,fields:[F('n','Note','textarea',0,1,2000)],submit:'Add note',onSubmit:d=>Dom.note(o.id,d.n)});
-function exportObj(o){const b=new Blob([JSON.stringify({object:o,relationships:relsOf(o.id),audit:S.audit.filter(a=>a.target===o.id)},null,2)],{type:'application/json'});const a=h('a',{href:URL.createObjectURL(b),download:o.id+'.json'});document.body.append(a);a.click();a.remove()}
-/* ============ Perf / diagnostics ============ */
-const Perf={mode(){if(matchMedia('(prefers-reduced-motion:reduce)').matches||innerWidth<600||(navigator.hardwareConcurrency||4)<=2||navigator.connection&&navigator.connection.saveData)return'REDUCED';return Object.keys(S.objects).length>200?'LOW':'BALANCED'},
- webgl(){try{const c=document.createElement('canvas');return c.getContext('webgl2')||c.getContext('webgl')?'available':'unavailable'}catch(e){return'unavailable'}},
- sample(){let n=0,t0=performance.now();const f=()=>{if(++n<40)requestAnimationFrame(f);else{S.frame=(performance.now()-t0)/n}};requestAnimationFrame(f)}};
-/* ============ Graph engine (Canvas, real relationships only) ============ */
-const Graph={stop(){if(S.gapi)S.gapi.stop();S.gapi=null},
- mount(host){const cv=h('canvas',{class:'gcv','aria-label':'Relationship graph'});host.append(cv);const ctx=cv.getContext('2d'),types=S.gtypes||Object.keys(TYPES);
-  const nodes=Data.list().filter(o=>types.includes(o.type)).map((o,i)=>{const p=S.layout[o.id]||{x:Math.cos(i*2.4)*(50+i*7),y:Math.sin(i*2.4)*(50+i*7)};return{id:o.id,o,x:p.x,y:p.y,vx:0,vy:0}});
-  const by=Object.fromEntries(nodes.map(n=>[n.id,n])),edges=S.rels.filter(r=>by[r.from]&&by[r.to]).map(r=>({a:by[r.from],b:by[r.to]}));
-  const cam={x:0,y:0,k:1};let alpha=1,dirty=true,drag=null,pan=null,moved=false,q='',raf=0,W=0,H=0;const red=Perf.mode()==='REDUCED';
-  const step=()=>{for(const a of nodes)for(const b of nodes){if(a===b)continue;const dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+.01;if(d2<90000){const f=900/d2;a.vx+=dx*f;a.vy+=dy*f}}
-   for(const e of edges){const dx=e.b.x-e.a.x,dy=e.b.y-e.a.y,d=Math.hypot(dx,dy)||1,f=(d-90)*.02;e.a.vx+=dx/d*f;e.a.vy+=dy/d*f;e.b.vx-=dx/d*f;e.b.vy-=dy/d*f}
-   for(const n of nodes){n.vx-=n.x*.002;n.vy-=n.y*.002;if(n!==drag){n.x+=n.vx*alpha;n.y+=n.vy*alpha}n.vx*=.6;n.vy*=.6}alpha*=.985};
-  const size=()=>{const r=host.getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=r.height;cv.width=W*d;cv.height=H*d;dirty=true};
-  const nb=()=>{const s=new Set();if(S.sel&&by[S.sel]){s.add(S.sel);edges.forEach(e=>{if(e.a.id===S.sel)s.add(e.b.id);if(e.b.id===S.sel)s.add(e.a.id)})}
-   if(q)nodes.forEach(n=>{if(Search.text(n.o).includes(q))s.add(n.id)});return s};
-  const draw=()=>{const d=devicePixelRatio||1,hi=nb();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);ctx.setTransform(d*cam.k,0,0,d*cam.k,d*(W/2+cam.x),d*(H/2+cam.y));
-   ctx.lineWidth=1/cam.k;for(const e of edges){const on=hi.has(e.a.id)&&hi.has(e.b.id);ctx.strokeStyle=on?'#c07a45':'#4a3d31';ctx.beginPath();ctx.moveTo(e.a.x,e.a.y);ctx.lineTo(e.b.x,e.b.y);ctx.stroke()}
-   const labels=nodes.length<=60&&!red||cam.k>1.3;ctx.font=(11/cam.k)+'px system-ui';
-   for(const n of nodes){const dim=hi.size&&!hi.has(n.id);ctx.globalAlpha=dim?.25:1;ctx.fillStyle=TYPES[n.o.type].col;ctx.beginPath();ctx.arc(n.x,n.y,n.id===S.sel?9:6,0,7);ctx.fill();if(n.id===S.sel){ctx.strokeStyle='#eee6d6';ctx.stroke()}
-    if(labels||hi.has(n.id)){ctx.fillStyle='#eee6d6';ctx.fillText(n.o.title.slice(0,24),n.x+10,n.y+4)}}ctx.globalAlpha=1};
-  const loop=()=>{if(alpha>.02){step();dirty=true}if(dirty){draw();dirty=false}raf=requestAnimationFrame(loop)};
-  const pt=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left-W/2-cam.x)/cam.k,(e.clientY-r.top-H/2-cam.y)/cam.k]};
-  const hit=e=>{const[x,y]=pt(e);return nodes.find(n=>Math.hypot(n.x-x,n.y-y)<10/cam.k)};
-  cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);moved=false;const n=hit(e);if(n)drag=n;else pan={x:e.clientX,y:e.clientY,cx:cam.x,cy:cam.y}};
-  cv.onpointermove=e=>{if(drag){const[x,y]=pt(e);drag.x=x;drag.y=y;moved=true;alpha=Math.max(alpha,.3);dirty=true}else if(pan){cam.x=pan.cx+e.clientX-pan.x;cam.y=pan.cy+e.clientY-pan.y;moved=true;dirty=true}};
-  cv.onpointerup=()=>{if(drag&&!moved)select(drag.id);if(drag)S.layout[drag.id]={x:drag.x,y:drag.y};drag=pan=null;Storage.save()};
-  cv.onwheel=e=>{e.preventDefault();const f=e.deltaY<0?1.12:.89,r=cv.getBoundingClientRect(),mx=e.clientX-r.left-W/2,my=e.clientY-r.top-H/2;cam.x=mx-(mx-cam.x)*f;cam.y=my-(my-cam.y)*f;cam.k=Math.min(6,Math.max(.15,cam.k*f));dirty=true};
-  const ro=new ResizeObserver(size);ro.observe(host);size();if(red){for(let i=0;i<300;i++)step();alpha=0}
-  const api={stop(){cancelAnimationFrame(raf);ro.disconnect()},touch(){dirty=true},search(v){q=v.toLowerCase();dirty=true},zoom(f){cam.k=Math.min(6,Math.max(.15,cam.k*f));dirty=true},
-   fit(){if(!nodes.length)return;const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y),w=Math.max(...xs)-Math.min(...xs)+80,hh=Math.max(...ys)-Math.min(...ys)+80;cam.k=Math.min(3,W/w,H/hh);cam.x=-(Math.max(...xs)+Math.min(...xs))/2*cam.k;cam.y=-(Math.max(...ys)+Math.min(...ys))/2*cam.k;dirty=true},
-   reset(){S.layout={};Storage.save();render()}};
-  api.fit();S.gapi=api;raf=requestAnimationFrame(loop)}};
-/* ============ Views ============ */
-const NAV=[['command','Command'],['reports','Reports'],['cases','Cases'],['tasks','Tasks'],['people','People'],['documents','Documents'],['publications','Publications'],['messages','Messages'],['intelligence','Intelligence'],['systems','Systems'],['workspace','Workspace'],['activity','Activity'],['audit','Audit'],['terminal','Terminal'],['files','Files'],['settings','Settings'],['public','Public site']];
-const VCAP={reports:'reports.read',cases:'reports.read',people:'people.read',audit:'audit.read'};
-const assignee=o=>{const r=S.rels.find(r=>r.from===o.id&&r.type==='ASSIGNED_TO'),p=r&&S.objects[r.to];return p?p.title:''};
-const idl=id=>S.objects[id]?h('a',{href:'#',class:'id',onclick:e=>{e.preventDefault();select(id)}},id):h('span',{class:'id'},id);
-function vList(types,title){const f=(S.filter[title]||'').toLowerCase(),rows=types.flatMap(t=>Data.list(t)).filter(o=>!f||Search.text(o).includes(f));
- return h('section',{class:'pane'},h('div',{class:'bar'},h('h2',{},title),h('input',{placeholder:'Filter',value:S.filter[title]||'','aria-label':'Filter',onchange:e=>{S.filter[title]=e.target.value;render()}}),...types.filter(t=>can(TYPES[t].cap)).map(t=>h('button',{class:'pri',onclick:()=>openCreate(t)},'New '+TYPES[t].label.toLowerCase()))),
-  rows.length?h('div',{class:'scroll'},h('table',{},h('thead',{},h('tr',{},['ID','Title','Type','Status','Priority','Assigned','Sync','Updated'].map(x=>h('th',{},x)))),h('tbody',{},rows.map(o=>h('tr',{tabindex:0,class:S.sel===o.id?'on':'',onclick:()=>select(o.id),onkeydown:e=>e.key==='Enter'&&select(o.id)},h('td',{class:'id'},o.id),h('td',{},o.title),h('td',{},o.type),h('td',{},o.status),h('td',{},o.priority||''),h('td',{},assignee(o)),h('td',{},badge(o.sync)),h('td',{},fmt(o.updatedAt))))))):empty('Nothing here yet. Use the New button to create the first record.'))}
-function vCommand(){const L=(rows,fn)=>rows.length?rows.slice(0,8).map(fn):[h('div',{class:'mu'},'None')];const li=(o,r)=>h('div',{class:'li',onclick:()=>select(o.id)},h('span',{class:'id'},o.id),h('span',{},o.title),h('span',{},r||o.status));
- const pend=S.audit.filter(a=>a.sync!=='CONFIRMED').length,me=Data.list('person',p=>p.title===S.session.actor)[0];
- return h('section',{},h('div',{class:'bar'},h('h2',{},'Command'),h('button',{class:'pri',onclick:()=>openCreate('report')},'New report')),h('br'),h('div',{class:'grid'},
-  h('div',{class:'panel'},h('h3',{},'Reports requiring review'),...L(Data.list('report',o=>['SUBMITTED','RECEIVED','IN_REVIEW'].includes(o.status)),li)),
-  h('div',{class:'panel'},h('h3',{},'Open cases'),...L(Data.list('case',o=>o.status!=='CLOSED'),li)),
-  h('div',{class:'panel'},h('h3',{},'Tasks'+(me?' assigned to me':' open')),...L(Data.list('task',o=>!['DONE','ARCHIVED'].includes(o.status)&&(!me||S.rels.some(r=>r.from===o.id&&r.type==='ASSIGNED_TO'&&r.to===me.id))),li)),
-  h('div',{class:'panel'},h('h3',{},'Pending publications'),...L(Data.list('publication',o=>['EDITORIAL_REVIEW','APPROVED'].includes(o.status)),li)),
-  h('div',{class:'panel'},h('h3',{},'Notifications ('+S.notifs.filter(n=>!n.read).length+' unread)'),...L(S.notifs,n=>h('div',{class:'li',onclick:()=>{n.read=true;Storage.save();n.target&&select(n.target);render()}},h('span',{},n.kind),h('span',{},n.text+(n.email?' [email '+n.email+']':'')),h('span',{},fmt(n.ts))))),
-  h('div',{class:'panel'},h('h3',{},'System state'),...[['Backend',S.api],['Realtime',S.rt],['GitHub',GH.state],['Network',S.online?'online':'offline'],['Unconfirmed audit events',pend],['Objects',Object.keys(S.objects).length]].map(([k,v])=>h('div',{class:'kvr'},h('span',{},k),h('span',{},String(v))))),
-  h('div',{class:'panel'},h('h3',{},'Recent activity'),...L(S.audit,a=>h('div',{class:'li',onclick:()=>select(a.target)},h('span',{class:'id'},a.target),h('span',{},a.action+' by '+a.actor),h('span',{},fmt(a.ts)))))))}
-function vAudit(){return h('section',{class:'pane'},h('div',{class:'bar'},h('h2',{},'Audit ledger'),h('span',{class:'chip'},'Hash chain '+(Audit.verify()?'intact locally':'BROKEN')),h('span',{class:'chip'},'read-only')),
- S.audit.length?h('div',{class:'scroll'},h('table',{},h('thead',{},h('tr',{},['Time','Actor','Action','Target','Previous','New','Where','Sync'].map(x=>h('th',{},x)))),h('tbody',{},S.audit.map(a=>h('tr',{},h('td',{},fmt(a.ts)),h('td',{},a.actor+' ('+a.role+')'),h('td',{},a.action),h('td',{},idl(a.target)),h('td',{class:'mono'},JSON.stringify(a.prev)),h('td',{class:'mono'},JSON.stringify(a.next)),h('td',{},a.where),h('td',{},badge(a.sync))))))):empty('No audit events yet. Every mutation will be recorded here.'))}
-function vActivity(){return h('section',{class:'pane'},h('div',{class:'bar'},h('h2',{},'Activity')),S.audit.length?h('div',{class:'scroll'},S.audit.map(a=>h('div',{class:'li',onclick:()=>select(a.target)},h('span',{class:'mono'},fmt(a.ts)),h('span',{},a.actor+' '+a.action+' '),idl(a.target),badge(a.sync)))):empty('No activity yet.'))}
-function vIntel(){const host=h('div',{class:'gwrap'}),modes=['GRAPH','TREE','MATRIX','TIMELINE'];const types=S.gtypes||Object.keys(TYPES);let body;
- if(S.gmode==='GRAPH'){body=host;if(!Data.list().length)body=empty('No objects to graph yet.');else setTimeout(()=>Graph.mount(host),0)}
- else if(S.gmode==='TREE'){const root=S.sel&&Data.get(S.sel)?S.sel:(Data.list()[0]||{}).id,out=[],seen=new Set();const walk=(id,d,via)=>{if(seen.has(id)||d>3||!S.objects[id])return;seen.add(id);out.push([d,id,via]);relsOf(id).forEach(r=>{const o=r.from===id?r.to:r.from;walk(o,d+1,(r.from===id?'':'← ')+r.type)})};if(root)walk(root,0,'root');
-  body=out.length?h('div',{class:'scroll'},out.map(([d,id,v])=>h('div',{class:'li',style:'padding-left:'+d*20+'px',onclick:()=>select(id)},h('span',{class:'id'},id),h('span',{},S.objects[id].title),h('span',{},v)))):empty('Select an object to traverse its relationships.')}
- else if(S.gmode==='MATRIX'){const T=Object.keys(TYPES);body=h('div',{class:'scroll'},h('table',{},h('thead',{},h('tr',{},h('th',{},'from \\ to'),T.map(t=>h('th',{},t)))),h('tbody',{},T.map(a=>h('tr',{},h('td',{},a),T.map(b=>h('td',{},String(S.rels.filter(r=>S.objects[r.from]&&S.objects[r.to]&&S.objects[r.from].type===a&&S.objects[r.to].type===b).length))))))))}
- else body=S.audit.length?h('div',{class:'scroll'},S.audit.map(a=>h('div',{class:'li'},h('span',{class:'mono'},fmt(a.ts)),h('span',{},a.action),idl(a.target)))):empty('No events yet.');
- return h('section',{class:'pane'},h('div',{class:'bar'},h('h2',{},'Intelligence'),h('div',{class:'tabs'},modes.map(m=>h('button',{class:S.gmode===m?'on':'',onclick:()=>{S.gmode=m;render()}},m))),
-  S.gmode==='GRAPH'?[h('input',{placeholder:'Highlight',oninput:e=>S.gapi&&S.gapi.search(e.target.value)}),h('button',{onclick:()=>S.gapi&&S.gapi.fit()},'Fit'),h('button',{onclick:()=>S.gapi&&S.gapi.zoom(1.25)},'+'),h('button',{onclick:()=>S.gapi&&S.gapi.zoom(.8)},'−'),h('button',{onclick:()=>S.gapi&&S.gapi.reset()},'Reset layout')]:null),
-  S.gmode==='GRAPH'?h('div',{class:'chips'},Object.keys(TYPES).map(t=>h('button',{class:types.includes(t)?'':'off',onclick:()=>{S.gtypes=types.includes(t)?types.filter(x=>x!==t):[...types,t];render()}},t))):null,body)}
-function ghPanel(){const rs=GH.repos();return h('div',{},h('div',{class:'bar'},h('span',{class:'chip'},'State: '+GH.state),h('button',{onclick:()=>GH.sync()},'Sync now')),
- !rs.length?empty('No repositories configured. Add owner/name in Settings or CONFIG.github.repos.'):rs.map(r=>{const g=S.gh[r];return h('div',{class:'art'},h('h3',{},r),g&&g.error?h('p',{class:'mut'},'Error: '+g.error):null,g&&g.d?[h('p',{},g.d.desc||'No description'),h('p',{class:'mut'},['Language '+(g.d.lang||'n/a'),'Stars '+g.d.stars,'Forks '+g.d.forks,'Open issues '+g.d.issues,'Default branch '+g.d.branch,'Last push '+fmt(g.d.pushed),'Synced '+fmt(g.at)].join(', '))]:h('p',{class:'mut'},'Not synced yet.'))}))}
-function vPublic(){const pubs=Data.list('publication',o=>o.status==='PUBLISHED'),of=(...t)=>pubs.filter(o=>t.includes(o.props.ptype));
- const art=o=>h('article',{class:'art'},h('h3',{},o.title),h('p',{class:'mut'},(o.props.ptype||'')+', '+fmt(o.props.publishedAt)+', by '+o.author),h('p',{},o.props.summary||''),h('pre',{},o.props.body||''));
- const objs=t=>Data.list(t,o=>o.tags.includes('public')).map(o=>h('article',{class:'art'},h('h3',{},o.title),h('p',{class:'mut'},o.status),h('p',{},o.props.description||'')));
- const T=[['home','Home'],['systems','Systems'],['projects','Projects'],['research','Research'],['publications','Publications'],['statements','Statements'],['github','GitHub'],['contact','Contact']];
- const list=(a,m)=>a.length?a:empty(m);const pt=S.ptab;let c;
- if(pt==='home')c=h('div',{class:'hero'},h('h1',{},'OBLIVION'),h('p',{class:'mut'},'Public records are read from published objects only. This site and the command center are two surfaces of one platform.'),pubs.length?pubs.slice(0,3).map(art):empty('No published records yet.'));
- else if(pt==='systems')c=list(objs('system'),'No public systems. Tag a system "public" to list it here.');else if(pt==='projects')c=list(objs('project'),'No public projects. Tag a project "public" to list it here.');
- else if(pt==='research')c=list(of('RESEARCH').map(art),'No published research.');else if(pt==='publications')c=list(of('ARTICLE','ANNOUNCEMENT','TECHNICAL NOTE').map(art),'No published articles.');
- else if(pt==='statements')c=list(of('STATEMENT').map(art),'No published statements.');else if(pt==='github')c=ghPanel();
- else c=h('div',{class:'hero'},h('h3',{},'Contact'),h('p',{class:'mut'},'Reports go through the secure API and receive a report ID only once the server confirms them.'),can('reports.create')?h('button',{class:'pri',onclick:()=>openCreate('report')},'Submit a report'):empty('Sign in to submit a report.'));
- return h('section',{},h('div',{class:'tabs'},T.map(([k,l])=>h('button',{class:pt===k?'on':'',onclick:()=>{S.ptab=k;render()}},l))),c)}
-function vWorkspace(){const q=S.cfg.searches||[];return h('section',{},h('div',{class:'bar'},h('h2',{},'Workspace')),h('div',{class:'grid'},
- h('div',{class:'panel'},h('h3',{},'Favorites'),S.fav.filter(id=>Data.get(id)).length?S.fav.filter(id=>Data.get(id)).map(id=>h('div',{class:'li',onclick:()=>select(id)},h('span',{class:'id'},id),h('span',{},S.objects[id].title))):h('div',{class:'mu'},'Use Favorite in the inspector to pin objects.')),
- h('div',{class:'panel'},h('h3',{},'Saved searches'),h('button',{onclick:()=>openForm({title:'Save search',fields:[F('q','Query (supports type: status: tag:)','',0,1,100)],onSubmit:d=>{S.cfg.searches=[...q,d.q];Storage.save();render()}})},'Save a search'),q.map((s,i)=>h('div',{class:'li',onclick:()=>palette(s)},h('span',{},s),h('span',{onclick:e=>{e.stopPropagation();S.cfg.searches=q.filter((_,j)=>j!==i);Storage.save();render()}},'remove'))))))}
-function vMessages(){return h('section',{},h('div',{class:'bar'},h('h2',{},'Messages')),!CONFIG.api?empty('Messaging needs a backend. Expected endpoints: GET /api/messages, POST /api/messages, POST /api/messages/:id/read. Nothing is sent or received in local mode.'):S.msgs.length?S.msgs.map(m=>h('div',{class:'li'},h('span',{},m.from),h('span',{},m.subject),h('span',{},m.read?'read':'unread'))):empty('Inbox is empty.'),CONFIG.api?h('button',{onclick:async()=>{try{S.msgs=(await Api.req('GET','/api/messages')).messages||[];render()}catch(e){Err.show(e.cat||'NETWORK',e.msg)}}},'Refresh'):null)}
-function vTerminal(){const out=h('div',{class:'term'},S.term.join('\n')),inp=h('input',{class:'term-in',placeholder:'help','aria-label':'Terminal input',onkeydown:e=>{if(e.key!=='Enter')return;const v=e.target.value.trim();e.target.value='';if(v==='clear'){S.term=[];return render()}S.term.push('> '+v,...Term.run(v));render();setTimeout(()=>{const t=$('.term-in');t&&t.focus()},0)}});
- setTimeout(()=>{out.scrollTop=1e9},0);return h('section',{class:'pane'},h('div',{class:'bar'},h('h2',{},'Terminal')),out,inp)}
-const Term={run(v){const[c,...a]=v.split(/\s+/),ls=(t)=>Data.list(t).map(o=>o.id+'  '+o.status+'  '+o.title),n=x=>x.length?x:['(none)'];
- const M={help:()=>['help status reports cases people projects systems docs tasks messages audit graph 3d search <q> clear','Only platform commands run here; OS commands are not available.'],
-  status:()=>['backend: '+S.api,'realtime: '+S.rt,'github: '+GH.state,'network: '+(S.online?'online':'offline'),'role: '+S.session.role+' ('+S.session.mode+')','objects: '+Object.keys(S.objects).length],
-  reports:()=>n(ls('report')),cases:()=>n(ls('case')),people:()=>n(ls('person')),projects:()=>n(ls('project')),systems:()=>n(ls('system')),docs:()=>n(ls('document')),tasks:()=>n(ls('task')),
-  messages:()=>[CONFIG.api?S.msgs.length+' messages':'no backend configured'],audit:()=>n(S.audit.slice(0,10).map(x=>x.ts+' '+x.actor+' '+x.action+' '+x.target)),
-  graph:()=>{go('intelligence');return['opening graph']},'3d':()=>['3D system model is not part of this build.'],search:()=>n(Search.query(a.join(' ')).map(o=>o.id+'  '+o.title))};
- return c?(M[c]?M[c]():['Unknown command: '+c+' (try help)']):[]}};
-function fileInfo(name,txt){const ext=(name.split('.').pop()||'').toLowerCase(),r=[['Name',name],['Characters',txt.length],['Lines',txt.split('\n').length]];
- if(ext==='json'){try{const j=JSON.parse(txt),arr=Array.isArray(j);r.push(['Root',arr?'array ('+j.length+' items)':typeof j]);const keys=new Set();(arr?j.slice(0,500):[j]).forEach(x=>x&&typeof x==='object'&&Object.keys(x).forEach(k=>keys.add(k)));r.push(['Keys',[...keys].slice(0,60).join(', ')||'n/a'])}catch(e){r.push(['JSON','Parse error: '+e.message])}}
- else if(ext==='csv'){const ls=txt.split(/\r?\n/).filter(Boolean),sp=l=>l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).map(x=>x.replace(/,$/,'').replace(/^"|"$/g,'')),hd=ls[0]?sp(ls[0]):[];r.push(['Records',Math.max(0,ls.length-1)],['Columns',hd.join(', ')]);
-  hd.slice(0,30).forEach((c,i)=>{const v=ls.slice(1).map(l=>sp(l)[i]).filter(x=>x!==''&&x!=null),nu=v.map(Number).filter(x=>!isNaN(x));r.push(['· '+c,v.length+' filled'+(nu.length===v.length&&nu.length?', min '+Math.min(...nu)+', max '+Math.max(...nu):'')])})}
- else{r.push(['Words',(txt.match(/\S+/g)||[]).length]);if(ext==='log')['ERROR','WARN','INFO','DEBUG'].forEach(l=>r.push([l,(txt.match(new RegExp('\\b'+l+'\\b','g'))||[]).length]))}return r}
-function vFiles(){const res=h('div',{});return h('section',{},h('div',{class:'bar'},h('h2',{},'Files')),h('p',{class:'mut'},'JSON, CSV, TXT and LOG files are read in this browser and never uploaded or executed.'),
- h('input',{type:'file',accept:'.json,.csv,.txt,.log','aria-label':'Choose a file',onchange:async e=>{const f=e.target.files[0];if(!f)return;if(f.size>5e6)return Err.show('VALIDATION','File larger than 5 MB');const t=await f.text();res.replaceChildren(h('table',{},h('tbody',{},fileInfo(f.name,t).map(([k,v])=>h('tr',{},h('td',{},k),h('td',{},String(v)))))),h('h3',{},'Preview'),h('pre',{},t.slice(0,3000)))}}),res)}
-function vSettings(){const s=S.session,adm=can('settings.manage');const diag=[['Network',S.online?'online':'offline'],['Backend',S.api],['Realtime',S.rt],['GitHub',GH.state],['Local storage',S.storageOk?'ok':'unavailable'],['WebGL',Perf.webgl()],['Render mode',Perf.mode()],['Frame time',S.frame?S.frame.toFixed(1)+' ms':'n/a'],['Objects',Object.keys(S.objects).length],['Relationships',S.rels.length],['Audit events',S.audit.length]];Perf.sample();
- const integ=S.integ||['GitHub','Email','Cloudflare','Storage','Authentication','Webhooks'].map(n=>({name:n,status:n==='GitHub'?(GH.repos().length?GH.state:'UNCONFIGURED'):CONFIG.api?'UNKNOWN':'UNCONFIGURED',lastSync:n==='GitHub'?Object.values(S.gh).map(g=>g.at).filter(Boolean).sort().pop():null,error:n==='GitHub'&&/ERROR|RATE/.test(GH.state)?GH.state:''}));
- return h('section',{},h('div',{class:'bar'},h('h2',{},'Settings')),h('div',{class:'grid'},
-  h('div',{class:'panel'},h('h3',{},'Session'),...[['Actor',s.actor],['Role',s.role],['Mode',s.mode],['Expires',s.expires?fmt(s.expires):'n/a']].map(([k,v])=>h('div',{class:'kvr'},h('span',{},k),h('span',{},v))),
-   s.mode==='LOCAL'?[h('label',{},'Local role (interface only) ',h('select',{onchange:e=>{S.cfg.role=e.target.value;Storage.save();Auth.init().then(render)}},Object.keys(ROLES).map(r=>h('option',{value:r,selected:r===s.role},r)))),h('label',{},'Actor name ',h('input',{value:s.actor,onchange:e=>{S.cfg.actor=e.target.value.trim()||'local-operator';Storage.save();Auth.init().then(render)}}))]:null),
-  h('div',{class:'panel'},h('h3',{},'Integrations'),...integ.map(i=>h('div',{class:'kvr'},h('span',{},i.name),h('span',{},i.status+(i.lastSync?', last sync '+fmt(i.lastSync):'')+(i.error?', '+i.error:''))))),
-  h('div',{class:'panel'},h('h3',{},'Diagnostics'),...diag.map(([k,v])=>h('div',{class:'kvr'},h('span',{},k),h('span',{},String(v))))),
-  h('div',{class:'panel'},h('h3',{},'GitHub repositories'),h('p',{class:'mut'},(S.cfg.repos||[]).join(', ')||'None added'),adm?h('button',{onclick:()=>openForm({title:'Add repository',fields:[F('r','owner/name','',0,1,100)],onSubmit:async d=>{if(!/^[\w.-]+\/[\w.-]+$/.test(d.r))throw{msg:'Use owner/name'};S.cfg.repos=[...new Set([...(S.cfg.repos||[]),d.r])];Storage.save();GH.sync()}})},'Add repository'):null),
-  h('div',{class:'panel'},h('h3',{},'Data'),h('div',{class:'acts'},h('button',{onclick:()=>Sync.flush()},'Retry sync'),
-   adm?h('button',{onclick:()=>openForm({title:'Create organization identity',fields:[F('address','Address (local part)','',0,1,60),F('role','Role','select',Object.keys(ROLES))],submit:'Request',onSubmit:async d=>{const r=await Api.req('POST','/api/identities',d);toast(r.confirmed===true?'Server confirmed identity':'Request sent, awaiting server confirmation')}})},'Create organization identity'):null,
-   adm?h('button',{onclick:()=>{if(confirm('Delete all local data in this browser? Server data is not affected.')){localStorage.removeItem(Storage.k);location.reload()}}},'Reset local data'):null),h('p',{class:'mut'},'Identity creation calls POST /api/identities. Mailboxes are created by your mail provider, never by this page.'))))}
-/* ============ Inspector ============ */
-function select(id){S.sel=id;renderInsp();if(S.gapi)S.gapi.touch()}
-function renderInsp(){const el=$('#insp');el.replaceChildren();const o=S.sel&&Data.get(S.sel);el.classList.toggle('open',!!o);if(!o)return;const w=WF[o.type],tos=(w.t[o.status]||[]).filter(t=>can(w.cap[t]||w.cap.d)),kv=(k,v)=>h('div',{class:'kvr'},h('span',{},k),h('span',{},v)),fav=S.fav.includes(o.id),mg=can(CAPM[o.type]);
- const body=o.props.body||o.props.content;
- el.append(h('div',{class:'ih'},h('div',{},h('div',{class:'id'},o.id),h('h3',{},o.title)),h('button',{'aria-label':'Close',onclick:()=>select(null)},'✕')),
-  kv('Type',TYPES[o.type].label),kv('Status',o.status),kv('Priority',o.priority||'n/a'),kv('Author',o.author),kv('Created',fmt(o.createdAt)),kv('Updated',fmt(o.updatedAt)),kv('Version',o.version),kv('Sync',badge(o.sync)),o.tags.length?kv('Tags',o.tags.join(', ')):null,
-  ...Object.entries(o.props).filter(([k,v])=>v&&k!=='body'&&k!=='content').map(([k,v])=>kv(k,String(v).slice(0,300))),body?h('pre',{},body.slice(0,4000)):null,
-  h('div',{class:'acts'},tos.map(t=>h('button',{class:'pri',onclick:()=>Dom.transition(o.id,t)},t==='ARCHIVED'?'Archive':t==='APPROVED'?'Approve':t==='PUBLISHED'?'Publish':'→ '+t)),
-   mg?h('button',{onclick:()=>openEdit(o)},'Edit'):null,['report','case','task'].includes(o.type)&&mg?h('button',{onclick:()=>openAssign(o)},'Assign'):null,
-   o.type==='report'&&can('cases.manage')?h('button',{onclick:()=>Dom.caseFrom(o.id)},'Create case'):null,can('tasks.manage')?h('button',{onclick:()=>openForm({title:'New task for '+o.id,fields:[F('t','Title','',0,1,120)],submit:'Create task',onSubmit:d=>Dom.taskFor(o.id,d.t)})},'New task'):null,
-   mg?h('button',{onclick:()=>openLink(o)},'Link'):null,h('button',{onclick:()=>openNote(o)},'Add note'),h('button',{onclick:()=>{S.fav=fav?S.fav.filter(x=>x!==o.id):[...S.fav,o.id];Storage.save();renderInsp()}},fav?'Unfavorite':'Favorite'),h('button',{onclick:()=>exportObj(o)},'Export')),
-  h('h4',{},'Relationships'),...(relsOf(o.id).length?relsOf(o.id).map(r=>{const out=r.from===o.id,ot=out?r.to:r.from;return h('div',{class:'li'},h('span',{},(out?'':'← ')+r.type),idl(ot),S.objects[ot]?h('span',{},S.objects[ot].title):null,mg&&r.type!=='CREATED_FROM'?h('span',{onclick:()=>Dom.unlink(r),style:'cursor:pointer'},'unlink'):null)}):[h('div',{class:'mu'},'No links')]),
-  h('h4',{},'Notes'),...(o.notes.length?o.notes.map(n=>h('div',{class:'li'},h('span',{},n.actor),h('span',{},n.text))):[h('div',{class:'mu'},'No notes')]),
-  h('h4',{},'Timeline'),...(()=>{const t=S.audit.filter(a=>a.target===o.id);return t.length?t.map(a=>h('div',{class:'li'},h('span',{class:'mono'},fmt(a.ts)),h('span',{},a.actor+' '+a.action+(a.next&&a.next.status?' → '+a.next.status:'')),badge(a.sync))):[h('div',{class:'mu'},'No events')]})())}
-/* ============ Commands / palette ============ */
-const go=v=>{location.hash='#/'+v};
-function cmds(q){const c=[];NAV.forEach(([k,l])=>c.push({label:'OPEN '+l.toUpperCase(),hint:'navigate',run:()=>go(k)}));
- Object.keys(TYPES).forEach(t=>can(TYPES[t].cap)&&c.push({label:'NEW '+t.toUpperCase(),hint:'create',run:()=>openCreate(t)}));c.push({label:'SYNC GITHUB',hint:'integration',run:()=>GH.sync()},{label:'RETRY SYNC',hint:'backend',run:()=>Sync.flush()});
- const o=S.sel&&Data.get(S.sel);if(o){const w=WF[o.type];(w.t[o.status]||[]).filter(t=>can(w.cap[t]||w.cap.d)).forEach(t=>c.push({label:(t==='ARCHIVED'?'ARCHIVE':t==='APPROVED'?'APPROVE':t==='PUBLISHED'?'PUBLISH':'SET '+t)+' '+o.id,hint:'action',run:()=>Dom.transition(o.id,t)}));
-  c.push({label:'EXPORT '+o.id,hint:'action',run:()=>exportObj(o)});if(CAPM[o.type]&&can(CAPM[o.type]))c.push({label:'LINK '+o.id,hint:'action',run:()=>openLink(o)});if(['report','case','task'].includes(o.type))c.push({label:'ASSIGN '+o.id,hint:'action',run:()=>openAssign(o)})}
- const L=q.toLowerCase();return[...c.filter(x=>!L||x.label.toLowerCase().includes(L)),...(q?Search.query(q).slice(0,20).map(x=>({label:x.id+'  '+x.title,hint:x.type+' '+x.status,run:()=>select(x.id)})):[])]}
-function palette(init){const ov=h('div',{class:'ov',onclick:e=>e.target===ov&&ov.remove()}),inp=h('input',{placeholder:'Command or search objects',value:init||'','aria-label':'Command palette'}),list=h('div',{class:'plist'});let items=[],ix=0;
- const build=()=>{items=cmds(inp.value.trim());ix=Math.min(ix,Math.max(0,items.length-1));list.replaceChildren(...items.slice(0,40).map((it,i)=>h('div',{class:'pi'+(i===ix?' on':''),onclick:()=>{ov.remove();it.run()}},h('span',{},it.label),h('small',{},it.hint))))};
- inp.oninput=()=>{ix=0;build()};inp.onkeydown=e=>{if(e.key==='Escape')ov.remove();else if(e.key==='ArrowDown'){ix=Math.min(ix+1,items.length-1);build();e.preventDefault()}else if(e.key==='ArrowUp'){ix=Math.max(ix-1,0);build();e.preventDefault()}else if(e.key==='Enter'&&items[ix]){ov.remove();items[ix].run()}};
- ov.append(h('div',{class:'pal'},inp,list));document.body.append(ov);inp.focus();build()}
-addEventListener('keydown',e=>{const t=e.target.tagName;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();palette()}else if(e.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(t)){e.preventDefault();palette()}});
-/* ============ Shell / router ============ */
-const VIEWS={command:vCommand,reports:()=>vList(['report'],'Reports'),cases:()=>vList(['case'],'Cases'),tasks:()=>vList(['task'],'Tasks'),people:()=>vList(['person'],'People'),documents:()=>vList(['document'],'Documents'),publications:()=>vList(['publication'],'Publications'),messages:vMessages,intelligence:vIntel,systems:()=>vList(['system','project'],'Systems and projects'),workspace:vWorkspace,activity:vActivity,audit:vAudit,terminal:vTerminal,files:vFiles,settings:vSettings,public:vPublic};
-function render(){if(!S.session)return;Graph.stop();const m=$('#main'),top=m.scrollTop;m.replaceChildren();const v=S.view,priv=v!=='public';
- $('#hdr').replaceChildren(h('span',{class:'brand'},'OBLIVION COMMAND'),h('span',{class:'sp'}),h('button',{onclick:()=>palette()},'Search or command (Ctrl+K)'),h('span',{class:'chip'},S.online?'online':'offline'),h('span',{class:'chip'},'API '+S.api),h('span',{class:'chip'},'RT '+S.rt),h('span',{class:'chip'},S.session.role));
- $('#warn').replaceChildren(S.session.mode==='LOCAL'?h('div',{class:'warnbar'},'Local mode: no backend configured. Data stays in this browser, nothing is confirmed by a server, and roles are interface-level only.'):S.session.mode==='ANON'?h('div',{class:'warnbar'},'Not signed in. Private views are locked.'+(CONFIG.loginUrl?' ':''),CONFIG.loginUrl?h('a',{href:CONFIG.loginUrl},'Sign in'):''):null);
- $('#nav').replaceChildren(...NAV.map(([k,l])=>h('a',{href:'#/'+k,class:v===k?'on':''},l)));
- if(priv&&S.session.mode==='ANON')m.append(empty('Authentication required. Sign in through your configured provider.'));
- else if(VCAP[v]&&!can(VCAP[v]))m.append(empty('Your role lacks the '+VCAP[v]+' capability. The server remains the authority on access.'));
- else m.append(VIEWS[v]());m.scrollTop=top;renderInsp()}
-function route(){const v=(location.hash.replace(/^#\//,'')||'command').split('/')[0];S.view=VIEWS[v]?v:'command';render()}
-addEventListener('hashchange',route);
-addEventListener('online',()=>{S.online=true;render();GH.sync()});addEventListener('offline',()=>{S.online=false;render()});
-addEventListener('error',e=>Err.show('UNKNOWN',String(e.message||'Unexpected error')));
-(async function boot(){Storage.load();await Auth.init();if(CONFIG.api&&S.session.mode==='SERVER'){await Data.hydrate();try{S.integ=(await Api.req('GET','/api/integrations')).integrations}catch(e){}}
- RT.start();route();GH.sync()})();
+(function(){
+"use strict";
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const CONFIG = { maxNodes:6000, maxEdges:14000, ghPoll:5000, hnPoll:20000, eventWindow:3000 };
+const TYPE_COLOR = { ACCOUNT:[0.48,0.56,0.64], REPOSITORY:[0.54,0.44,0.82], DOMAIN:[0.89,0.91,0.92], SOURCE:[0.44,0.74,0.81] };
+const TYPE_RADIUS_BIAS = { ACCOUNT:70, REPOSITORY:70, DOMAIN:180, SOURCE:10 };
+
+// ---------- deterministic hashing / layout ----------
+function hash32(str){ let h=2166136261>>>0; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function rand01(seed){ seed=(seed^(seed>>>15))>>>0; seed=Math.imul(seed,2246822519)>>>0; seed=(seed^(seed>>>13))>>>0; seed=Math.imul(seed,3266489917)>>>0; return ((seed^(seed>>>16))>>>0)/4294967296; }
+function positionFor(id,type){
+  const h=hash32(id);
+  const a=rand01(h), b=rand01(h+101), c=rand01(h+202);
+  const bias=TYPE_RADIUS_BIAS[type]||100;
+  const r=bias+c*160;
+  const theta=a*Math.PI*2, phi=Math.acos(2*b-1);
+  return [r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi)];
+}
+
+// ---------- renderer ----------
+let renderer;
+try{ renderer=new THREE.WebGLRenderer({antialias:true}); }
+catch(e){ document.getElementById('boot').textContent='WEBGL UNSUPPORTED IN THIS BROWSER'; return; }
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x000000,0.0011);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,5000);
+camera.position.set(0,120,520);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=!REDUCE; controls.dampingFactor=0.08; controls.rotateSpeed=0.4; controls.zoomSpeed=0.6;
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+// sprite texture (soft glow point)
+const spriteCanvas=document.createElement('canvas'); spriteCanvas.width=spriteCanvas.height=64;
+const sctx=spriteCanvas.getContext('2d');
+const g=sctx.createRadialGradient(32,32,0,32,32,32);
+g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(0.4,'rgba(255,255,255,.55)'); g.addColorStop(1,'rgba(255,255,255,0)');
+sctx.fillStyle=g; sctx.fillRect(0,0,64,64);
+const spriteTex=new THREE.CanvasTexture(spriteCanvas);
+
+// ---------- graph store (typed arrays) ----------
+const N=CONFIG.maxNodes, E=CONFIG.maxEdges;
+const positions=new Float32Array(N*3), colors=new Float32Array(N*3), sizes=new Float32Array(N*3===0?N:N);
+const edgePos=new Float32Array(E*2*3), edgeCol=new Float32Array(E*2*3);
+let nodeCount=0, edgeCount=0;
+const idToIndex=new Map(); const indexToId=[];
+const nodeMeta=new Map(); // id -> {type,label,source,firstSeen,lastSeen}
+const edgeKeys=new Set();
+const active=new Map(); // index -> lastEventTime (pulse decay)
+
+const nodeGeo=new THREE.BufferGeometry();
+nodeGeo.setAttribute('position',new THREE.BufferAttribute(positions,3).setUsage(THREE.DynamicDrawUsage));
+nodeGeo.setAttribute('color',new THREE.BufferAttribute(colors,3).setUsage(THREE.DynamicDrawUsage));
+nodeGeo.setAttribute('size',new THREE.BufferAttribute(sizes,1).setUsage(THREE.DynamicDrawUsage));
+nodeGeo.setDrawRange(0,0);
+const nodeMat=new THREE.PointsMaterial({size:6,map:spriteTex,vertexColors:true,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:true});
+const points=new THREE.Points(nodeGeo,nodeMat); scene.add(points);
+
+const edgeGeo=new THREE.BufferGeometry();
+edgeGeo.setAttribute('position',new THREE.BufferAttribute(edgePos,3).setUsage(THREE.DynamicDrawUsage));
+edgeGeo.setAttribute('color',new THREE.BufferAttribute(edgeCol,3).setUsage(THREE.DynamicDrawUsage));
+edgeGeo.setDrawRange(0,0);
+const edgeMat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.16});
+const lines=new THREE.LineSegments(edgeGeo,edgeMat); scene.add(lines);
+
+function addNode(id,type,label,source){
+  const now=performance.now();
+  if(idToIndex.has(id)){
+    const i=idToIndex.get(id);
+    const m=nodeMeta.get(id); m.lastSeen=Date.now();
+    active.set(i,now);
+    return i;
+  }
+  if(nodeCount>=N) return -1;
+  const i=nodeCount++;
+  idToIndex.set(id,i); indexToId[i]=id;
+  const [x,y,z]=positionFor(id,type);
+  positions[i*3]=x; positions[i*3+1]=y; positions[i*3+2]=z;
+  const c=TYPE_COLOR[type]||[0.6,0.6,0.6];
+  colors[i*3]=c[0]; colors[i*3+1]=c[1]; colors[i*3+2]=c[2];
+  sizes[i]= type==='DOMAIN'?5: type==='SOURCE'?9:6;
+  nodeMeta.set(id,{type,label,source,firstSeen:Date.now(),lastSeen:Date.now()});
+  active.set(i,now);
+  nodeGeo.attributes.position.needsUpdate=true;
+  nodeGeo.attributes.color.needsUpdate=true;
+  nodeGeo.setDrawRange(0,nodeCount);
+  return i;
+}
+function addEdge(aId,bId,type,source){
+  const key=aId+'>'+bId;
+  if(edgeKeys.has(key)) return;
+  if(edgeCount>=E) return;
+  const ai=idToIndex.get(aId), bi=idToIndex.get(bId);
+  if(ai==null||bi==null) return;
+  edgeKeys.add(key);
+  const i=edgeCount++;
+  edgePos[i*6]=positions[ai*3]; edgePos[i*6+1]=positions[ai*3+1]; edgePos[i*6+2]=positions[ai*3+2];
+  edgePos[i*6+3]=positions[bi*3]; edgePos[i*6+4]=positions[bi*3+1]; edgePos[i*6+5]=positions[bi*3+2];
+  const c=TYPE_COLOR[nodeMeta.get(bId).type]||[0.5,0.5,0.5];
+  for(let k=0;k<2;k++){ edgeCol[i*6+k*3]=c[0]; edgeCol[i*6+k*3+1]=c[1]; edgeCol[i*6+k*3+2]=c[2]; }
+  edgeGeo.attributes.position.needsUpdate=true;
+  edgeGeo.attributes.color.needsUpdate=true;
+  edgeGeo.setDrawRange(0,edgeCount*2);
+}
+
+// ---------- live event log ----------
+const evLog=[];
+function logEvent(src,kind,detail){
+  evLog.unshift({t:new Date(),src,kind,detail});
+  if(evLog.length>60) evLog.pop();
+  document.getElementById('s-last').textContent='0s';
+  lastEventAt=performance.now();
+  renderEventLog();
+}
+function renderEventLog(){
+  const el=document.getElementById('events'); if(el.style.display==='none') return;
+  el.innerHTML=evLog.slice(0,40).map(e=>`<div>${e.t.toLocaleTimeString()} · ${e.src} · ${e.kind} <span style="color:#8fa">${e.detail}</span></div>`).join('');
+}
+let lastEventAt=performance.now();
+
+// ---------- source health ----------
+const health={github:'CONNECTING',hn:'CONNECTING'};
+function paintHealth(){
+  const map={ONLINE:'ok',RATE_LIMITED:'warn',OFFLINE:'bad',CONNECTING:'warn'};
+  document.getElementById('h-gh').className=map[health.github]; document.getElementById('h-gh').textContent=health.github;
+  document.getElementById('h-hn').className=map[health.hn]; document.getElementById('h-hn').textContent=health.hn;
+}
+
+// ---------- GitHub public events ----------
+let ghEtag=null;
+async function pollGithub(){
+  try{
+    const headers={}; if(ghEtag) headers['If-None-Match']=ghEtag;
+    const res=await fetch('https://api.github.com/events',{headers});
+    if(res.status===304){ health.github='ONLINE'; }
+    else if(res.status===403){ health.github='RATE_LIMITED'; }
+    else if(res.ok){
+      ghEtag=res.headers.get('ETag');
+      const poll=parseInt(res.headers.get('X-Poll-Interval')||'5',10)*1000;
+      const data=await res.json();
+      data.forEach(ev=>{
+        if(!['PushEvent','WatchEvent','ForkEvent','CreateEvent','IssuesEvent','PullRequestEvent','ReleaseEvent'].includes(ev.type)) return;
+        if(!ev.actor||!ev.repo) return;
+        const actorId='gh:a:'+ev.actor.login, repoId='gh:r:'+ev.repo.name;
+        addNode(actorId,'ACCOUNT',ev.actor.login,'GitHub Public Events');
+        addNode(repoId,'REPOSITORY',ev.repo.name,'GitHub Public Events');
+        addEdge(actorId,repoId,ev.type,'GitHub Public Events');
+        logEvent('GitHub',ev.type,ev.repo.name);
+      });
+      health.github='ONLINE';
+      setTimeout(pollGithub,Math.max(poll,CONFIG.ghPoll));
+      paintHealth(); return;
+    } else { health.github='OFFLINE'; }
+  }catch(e){ health.github='OFFLINE'; }
+  paintHealth();
+  setTimeout(pollGithub,CONFIG.ghPoll);
+}
+
+// ---------- Hacker News ----------
+const seenHN=new Set();
+async function pollHN(){
+  try{
+    addNode('hn','SOURCE','Hacker News','Hacker News API');
+    const res=await fetch('https://hacker-news.firebaseio.com/v0/newstories.json');
+    const ids=await res.json();
+    const fresh=ids.slice(0,15).filter(id=>!seenHN.has(id));
+    for(const id of fresh){
+      seenHN.add(id);
+      try{
+        const r=await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`);
+        const item=await r.json();
+        if(item && item.url){
+          const host=new URL(item.url).hostname.replace(/^www\./,'');
+          const domId='dom:'+host;
+          addNode(domId,'DOMAIN',host,'Hacker News API');
+          addEdge('hn',domId,'MENTIONS','Hacker News API');
+          logEvent('Hacker News','story → '+host,item.title? item.title.slice(0,28):'');
+        }
+      }catch(_){}
+    }
+    health.hn='ONLINE';
+  }catch(e){ health.hn='OFFLINE'; }
+  paintHealth();
+  setTimeout(pollHN,CONFIG.hnPoll);
+}
+
+// ---------- picking / inspector ----------
+const raycaster=new THREE.Raycaster(); raycaster.params.Points.threshold=6;
+const mouse=new THREE.Vector2();
+let selected=-1;
+renderer.domElement.addEventListener('click',(ev)=>{
+  mouse.x=(ev.clientX/innerWidth)*2-1; mouse.y=-(ev.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+  const hit=raycaster.intersectObject(points);
+  if(hit.length){ selected=hit[0].index; showInspector(selected); }
+});
+function degreeOf(id){
+  let d=0; edgeKeys.forEach(k=>{ if(k.startsWith(id+'>')||k.endsWith('>'+id)) d++; }); return d;
+}
+function showInspector(i){
+  const id=indexToId[i]; const m=nodeMeta.get(id); if(!m) return;
+  const el=document.getElementById('inspector');
+  el.style.display='block';
+  el.innerHTML=`<div class="type">${m.type}</div>
+    <div class="row"><span class="k">entity</span> <span class="v">${m.label}</span></div>
+    <div class="row"><span class="k">source</span> <span class="v">${m.source}</span></div>
+    <div class="row"><span class="k">first seen</span> <span class="v">${new Date(m.firstSeen).toLocaleTimeString()}</span></div>
+    <div class="row"><span class="k">last seen</span> <span class="v">${new Date(m.lastSeen).toLocaleTimeString()}</span></div>
+    <div class="row"><span class="k">degree</span> <span class="v">${degreeOf(id)}</span></div>`;
+}
+
+// ---------- search ----------
+document.getElementById('q').addEventListener('keydown',(e)=>{
+  if(e.key!=='Enter') return;
+  const q=e.target.value.trim().toLowerCase(); if(!q) return;
+  for(const [id,m] of nodeMeta){ if(m.label.toLowerCase().includes(q)){
+    const i=idToIndex.get(id);
+    const target=new THREE.Vector3(positions[i*3],positions[i*3+1],positions[i*3+2]);
+    controls.target.copy(target);
+    const dir=camera.position.clone().sub(target).normalize().multiplyScalar(80);
+    camera.position.copy(target.clone().add(dir));
+    showInspector(i); break;
+  } }
+});
+
+// ---------- keys ----------
+addEventListener('keydown',(e)=>{
+  if(e.key==='r'||e.key==='R'){ camera.position.set(0,120,520); controls.target.set(0,0,0); }
+  if(e.key==='Escape'){ selected=-1; document.getElementById('inspector').style.display='none'; }
+  if(e.key==='e'||e.key==='E'){ const el=document.getElementById('events'); el.style.display=el.style.display==='none'?'block':'none'; renderEventLog(); }
+});
+
+// ---------- perf + pulse loop ----------
+let lastT=performance.now(), frames=0, fpsAcc=0;
+function animate(){
+  requestAnimationFrame(animate);
+  const now=performance.now(); const dt=now-lastT; lastT=now; frames++; fpsAcc+=dt;
+  if(fpsAcc>500){ document.getElementById('p-fps').textContent=Math.round(1000/(fpsAcc/frames))+' FPS'; frames=0; fpsAcc=0; }
+  document.getElementById('s-nodes').textContent=nodeCount;
+  document.getElementById('s-edges').textContent=edgeCount;
+  const secs=Math.round((now-lastEventAt)/1000);
+  document.getElementById('s-last').textContent=secs+'s';
+
+  if(!REDUCE){
+    for(const [i,t] of active){
+      const age=now-t;
+      if(age>CONFIG.eventWindow){ active.delete(i); sizes[i]= (nodeMeta.get(indexToId[i])||{}).type==='DOMAIN'?5:6; continue; }
+      const decay=1-age/CONFIG.eventWindow;
+      sizes[i]=6+decay*10;
+    }
+    nodeGeo.attributes.size.needsUpdate=true;
+  }
+  controls.update();
+  renderer.render(scene,camera);
+}
+
+// ---------- boot ----------
+function boot(){
+  document.getElementById('boot').textContent='LOADING GRAPH';
+  paintHealth();
+  if(location.protocol==='file:'){
+    logEvent('System','static file context','use an HTTPS host for full reliability');
+  }
+  pollGithub(); pollHN();
+  setTimeout(()=>{ document.getElementById('boot').style.opacity='0'; setTimeout(()=>document.getElementById('boot').remove(),500); },1200);
+  animate();
+}
+boot();
+})();
 </script>
 </body>
 </html>
